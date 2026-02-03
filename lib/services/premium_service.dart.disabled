@@ -1,0 +1,172 @@
+/// Premium Service
+///
+/// Manages premium subscription purchases, validation, and premium user status.
+/// Integrates with in-app purchases for subscription management.
+
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Premium subscription service
+class PremiumService {
+  static final PremiumService _instance = PremiumService._internal();
+  factory PremiumService() => _instance;
+  PremiumService._internal();
+
+  static const String _premiumStatusKey = 'premium_status';
+  static const String _premiumExpiryKey = 'premium_expiry';
+  
+  // Subscription product IDs (replace with your actual product IDs)
+  static const String _monthlySubscriptionId = 'premium_monthly';
+  static const String _yearlySubscriptionId = 'premium_yearly';
+  
+  final InAppPurchase _inAppPurchase = InAppPurchase.instance;
+  StreamSubscription<List<PurchaseDetails>>? _subscription;
+  List<ProductDetails> _products = [];
+
+  /// Initialize the premium service
+  Future<void> initialize() async {
+    final bool available = await _inAppPurchase.isAvailable();
+    if (!available) {
+      print('In-app purchases not available');
+      return;
+    }
+
+    // Load available products
+    await _loadProducts();
+    
+    // Listen to purchase updates
+    _subscription = _inAppPurchase.purchaseStream.listen(
+      _onPurchaseUpdate,
+      onDone: () => _subscription?.cancel(),
+      onError: (error) => print('Purchase stream error: $error'),
+    );
+  }
+
+  /// Load available subscription products
+  Future<void> _loadProducts() async {
+    final Set<String> ids = {_monthlySubscriptionId, _yearlySubscriptionId};
+    final ProductDetailsResponse response = await _inAppPurchase.queryProductDetails(ids);
+    
+    if (response.notFoundIDs.isNotEmpty) {
+      print('Products not found: ${response.notFoundIDs}');
+    }
+    
+    _products = response.productDetails;
+    print('Loaded ${_products.length} products');
+  }
+
+  /// Get available subscription products
+  List<ProductDetails> get products => _products;
+
+  /// Purchase a subscription
+  Future<bool> purchaseSubscription(ProductDetails product) async {
+    final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);
+    
+    try {
+      if (product.id == _monthlySubscriptionId || product.id == _yearlySubscriptionId) {
+        await _inAppPurchase.buyNonConsumable(purchaseParam: purchaseParam);
+        return true;
+      }
+    } catch (e) {
+      print('Error purchasing subscription: $e');
+      return false;
+    }
+    
+    return false;
+  }
+
+  /// Handle purchase updates
+  void _onPurchaseUpdate(List<PurchaseDetails> purchaseDetailsList) {
+    for (final PurchaseDetails purchaseDetails in purchaseDetailsList) {
+      if (purchaseDetails.status == PurchaseStatus.pending) {
+        print('Purchase pending');
+      } else if (purchaseDetails.status == PurchaseStatus.error) {
+        print('Purchase error: ${purchaseDetails.error}');
+      } else if (purchaseDetails.status == PurchaseStatus.purchased ||
+                 purchaseDetails.status == PurchaseStatus.restored) {
+        _handleSuccessfulPurchase(purchaseDetails);
+      }
+      
+      if (purchaseDetails.pendingCompletePurchase) {
+        _inAppPurchase.completePurchase(purchaseDetails);
+      }
+    }
+  }
+
+  /// Handle successful purchase
+  Future<void> _handleSuccessfulPurchase(PurchaseDetails purchaseDetails) async {
+    print('Purchase successful: ${purchaseDetails.productID}');
+    
+    // Set premium status
+    await _setPremiumStatus(true);
+    
+    // Calculate expiry date based on subscription type
+    DateTime expiryDate;
+    if (purchaseDetails.productID == _monthlySubscriptionId) {
+      expiryDate = DateTime.now().add(const Duration(days: 30));
+    } else if (purchaseDetails.productID == _yearlySubscriptionId) {
+      expiryDate = DateTime.now().add(const Duration(days: 365));
+    } else {
+      expiryDate = DateTime.now().add(const Duration(days: 30)); // Default
+    }
+    
+    await _setPremiumExpiry(expiryDate);
+  }
+
+  /// Check if user has active premium subscription
+  Future<bool> isPremium() async {
+    final prefs = await SharedPreferences.getInstance();
+    final bool isPremium = prefs.getBool(_premiumStatusKey) ?? false;
+    
+    if (!isPremium) return false;
+    
+    // Check if premium has expired
+    final String? expiryString = prefs.getString(_premiumExpiryKey);
+    if (expiryString != null) {
+      final DateTime expiryDate = DateTime.parse(expiryString);
+      if (DateTime.now().isAfter(expiryDate)) {
+        await _setPremiumStatus(false);
+        return false;
+      }
+    }
+    
+    return true;
+  }
+
+  /// Set premium status
+  Future<void> _setPremiumStatus(bool isPremium) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_premiumStatusKey, isPremium);
+  }
+
+  /// Set premium expiry date
+  Future<void> _setPremiumExpiry(DateTime expiryDate) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_premiumExpiryKey, expiryDate.toIso8601String());
+  }
+
+  /// Restore purchases (for iOS)
+  Future<void> restorePurchases() async {
+    await _inAppPurchase.restorePurchases();
+  }
+
+  /// Get premium expiry date
+  Future<DateTime?> getPremiumExpiry() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? expiryString = prefs.getString(_premiumExpiryKey);
+    if (expiryString != null) {
+      return DateTime.parse(expiryString);
+    }
+    return null;
+  }
+
+  /// Dispose of resources
+  void dispose() {
+    _subscription?.cancel();
+  }
+}
+
+

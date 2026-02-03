@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "285299670930",
+    "project_id": "hydration-tracker-app-2024",
+    "storage_bucket": "hydration-tracker-app-2024.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:285299670930:android:ebfa9119e6f9131e560b4b",
+        "android_client_info": {
+          "package_name": "com.example.hydration_tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB768jjWb9Y0D7A_ftxQQyqWz7GMKI0UNE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

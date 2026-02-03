@@ -1,0 +1,121 @@
+/// Ad Service
+///
+/// Manages Google Mobile Ads integration including banner ads, interstitial ads,
+/// and premium user detection for ad-free experience.
+
+import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/app_providers.dart';
+
+/// Service for managing mobile advertisements
+class AdService {
+  static final AdService _instance = AdService._internal();
+  factory AdService() => _instance;
+  AdService._internal();
+
+  // Test ad unit IDs (replace with real ones for production)
+  static const String _bannerAdUnitId = 'ca-app-pub-3940256099942544/6300978111'; // Test ID
+  static const String _interstitialAdUnitId = 'ca-app-pub-3940256099942544/1033173712'; // Test ID
+  
+  // Production ad unit IDs (uncomment and replace when ready)
+  // static const String _bannerAdUnitId = 'your-production-banner-ad-unit-id';
+  // static const String _interstitialAdUnitId = 'your-production-interstitial-ad-unit-id';
+
+  InterstitialAd? _interstitialAd;
+  bool _isInterstitialAdReady = false;
+
+  /// Initialize the ad service
+  Future<void> initialize() async {
+    try {
+      await MobileAds.instance.initialize();
+      print('MobileAds initialized successfully');
+      _loadInterstitialAd();
+    } catch (e) {
+      print('MobileAds initialization failed: $e');
+      // Continue without ads rather than crashing
+    }
+  }
+
+  /// Load interstitial ad
+  Future<void> _loadInterstitialAd() async {
+    await InterstitialAd.load(
+      adUnitId: _interstitialAdUnitId,
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _isInterstitialAdReady = true;
+          print('Interstitial ad loaded successfully');
+        },
+        onAdFailedToLoad: (error) {
+          print('Interstitial ad failed to load: $error');
+          _isInterstitialAdReady = false;
+        },
+      ),
+    );
+  }
+
+  /// Show interstitial ad if user is not premium
+  Future<void> showInterstitialAdIfNotPremium(WidgetRef ref) async {
+    final isPremium = ref.read(premiumProvider);
+    
+    if (isPremium) {
+      print('Premium user - skipping interstitial ad');
+      return;
+    }
+
+    if (_isInterstitialAdReady && _interstitialAd != null) {
+      await _interstitialAd!.show();
+      _isInterstitialAdReady = false;
+      _loadInterstitialAd(); // Load next ad
+    } else {
+      print('Interstitial ad not ready');
+      _loadInterstitialAd(); // Try to load for next time
+    }
+  }
+
+  /// Create banner ad widget
+  Widget createBannerAd(WidgetRef ref) {
+    // TEMPORARY: Force show ads for testing
+    final isPremium = ref.watch(premiumProvider);
+    
+    if (isPremium) {
+      print('Premium user - but showing ad for testing');
+      // return const SizedBox.shrink(); // No ad for premium users
+    }
+
+    print('Creating banner ad for testing');
+    
+    return Container(
+      width: double.infinity,
+      height: 60,
+      color: Colors.grey[200], // Background to show ad container
+      child: Center(
+        child: Text(
+          'Ad Space (Test Mode)',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Show ad after water intake (called from dashboard)
+  Future<void> showAdAfterWaterIntake(WidgetRef ref) async {
+    // Wait a bit to let the user see their progress
+    await Future.delayed(const Duration(milliseconds: 500));
+    await showInterstitialAdIfNotPremium(ref);
+  }
+
+  /// Dispose of ads when app is closed
+  void dispose() {
+    _interstitialAd?.dispose();
+  }
+}
+
+/// Provider for AdService
+final adServiceProvider = Provider<AdService>((ref) => AdService());

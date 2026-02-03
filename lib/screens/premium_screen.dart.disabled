@@ -1,0 +1,389 @@
+/// Premium Screen
+///
+/// Displays premium subscription options and features. Allows users to upgrade
+/// to premium for an ad-free experience and additional features.
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import '../providers/app_providers.dart';
+import '../services/premium_service.dart';
+
+/// Premium subscription screen
+class PremiumScreen extends ConsumerStatefulWidget {
+  const PremiumScreen({super.key});
+
+  @override
+  ConsumerState<PremiumScreen> createState() => _PremiumScreenState();
+}
+
+class _PremiumScreenState extends ConsumerState<PremiumScreen> {
+  bool _isLoading = false;
+  List<ProductDetails> _products = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    final premiumService = ref.read(premiumServiceProvider);
+    setState(() {
+      _products = premiumService.products;
+    });
+  }
+
+  Future<void> _purchaseSubscription(ProductDetails product) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final premiumService = ref.read(premiumServiceProvider);
+      final success = await premiumService.purchaseSubscription(product);
+      
+      if (success) {
+        // Refresh premium status
+        await ref.read(premiumProvider.notifier).refreshPremiumStatus();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Premium subscription activated! 🎉'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Purchase failed. Please try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _restorePurchases() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final premiumService = ref.read(premiumServiceProvider);
+      await premiumService.restorePurchases();
+      
+      // Refresh premium status
+      await ref.read(premiumProvider.notifier).refreshPremiumStatus();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Purchases restored successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error restoring purchases: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isPremium = ref.watch(premiumProvider);
+
+    if (isPremium) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Premium Status'),
+          backgroundColor: theme.colorScheme.primary,
+          foregroundColor: theme.colorScheme.onPrimary,
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.verified,
+                size: 80,
+                color: theme.colorScheme.primary,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'You\'re Premium! 🎉',
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Enjoy your ad-free experience and premium features!',
+                style: theme.textTheme.bodyLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+              _buildPremiumFeaturesList(theme),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Go Premium'),
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
+        actions: [
+          TextButton(
+            onPressed: _isLoading ? null : _restorePurchases,
+            child: const Text('Restore'),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Center(
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.star,
+                    size: 80,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Upgrade to Premium',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Unlock all features and enjoy an ad-free experience',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 30),
+            
+            // Premium features
+            Text(
+              'Premium Features',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildPremiumFeaturesList(theme),
+            
+            const SizedBox(height: 30),
+            
+            // Subscription options
+            Text(
+              'Choose Your Plan',
+              style: theme.textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            _buildSubscriptionOptions(theme),
+            
+            const SizedBox(height: 20),
+            
+            // Terms and privacy
+            Text(
+              'By subscribing, you agree to our Terms of Service and Privacy Policy. Subscriptions automatically renew unless cancelled.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumFeaturesList(ThemeData theme) {
+    final features = [
+      {'icon': Icons.block, 'title': 'Ad-Free Experience', 'description': 'No more banner or interstitial ads'},
+      {'icon': Icons.psychology, 'title': 'Advanced Analytics', 'description': 'Detailed insights and trends'},
+      {'icon': Icons.notifications_active, 'title': 'Unlimited Reminders', 'description': 'Create as many reminders as you want'},
+      {'icon': Icons.palette, 'title': 'Premium Themes', 'description': 'Exclusive color themes and customization'},
+      {'icon': Icons.cloud_sync, 'title': 'Cloud Backup', 'description': 'Sync your data across all devices'},
+      {'icon': Icons.support_agent, 'title': 'Priority Support', 'description': 'Get help faster with priority support'},
+    ];
+
+    return Column(
+      children: features.map((feature) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Row(
+          children: [
+            Icon(
+              feature['icon'] as IconData,
+              color: theme.colorScheme.primary,
+              size: 24,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    feature['title'] as String,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    feature['description'] as String,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      )).toList(),
+    );
+  }
+
+  Widget _buildSubscriptionOptions(ThemeData theme) {
+    if (_products.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    return Column(
+      children: _products.map((product) {
+        final isMonthly = product.id.contains('monthly');
+        final isPopular = !isMonthly; // Yearly is usually more popular
+        
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: isPopular ? theme.colorScheme.primary : theme.colorScheme.outline,
+              width: isPopular ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _isLoading ? null : () => _purchaseSubscription(product),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                isMonthly ? 'Monthly' : 'Yearly',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (isPopular) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    'BEST VALUE',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onPrimary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            product.price,
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          if (!isMonthly) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Save 50% vs monthly',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (_isLoading)
+                      const CircularProgressIndicator()
+                    else
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        color: theme.colorScheme.primary,
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+}

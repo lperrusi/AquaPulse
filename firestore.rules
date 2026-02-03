@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Friends - users can read/write their own friend relationships
+    match /friends/{friendId} {
+      allow read, write: if request.auth != null && 
+        (resource.data.userId == request.auth.uid || 
+         resource.data.friendId == request.auth.uid);
+    }
+    
+    // Friend requests - users can read requests sent to them and create new ones
+    match /friend_requests/{requestId} {
+      allow read: if request.auth != null && 
+        (resource.data.fromUserId == request.auth.uid || 
+         resource.data.toUserId == request.auth.uid);
+      allow create: if request.auth != null && 
+        request.resource.data.fromUserId == request.auth.uid;
+      allow update: if request.auth != null && 
+        resource.data.toUserId == request.auth.uid;
+    }
+    
+    // Challenges - users can read challenges they participate in
+    match /challenges/{challengeId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Challenge participants - users can read/write their own participation
+    match /challenge_participants/{participantId} {
+      allow read, write: if request.auth != null && 
+        resource.data.userId == request.auth.uid;
+    }
+    
+    // Leaderboard entries - anyone can read, users can write their own
+    match /leaderboard_entries/{entryId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+        request.resource.data.userId == request.auth.uid;
+    }
+  }
+} 
