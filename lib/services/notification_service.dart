@@ -2,6 +2,7 @@
 ///
 /// Handles all local notification scheduling, permissions, and cancellation for hydration reminders and goal/streak alerts.
 /// Integrates with flutter_local_notifications and timezone packages.
+library;
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -15,10 +16,27 @@ import 'notification_analytics_service.dart';
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
-  NotificationService._internal();
+  NotificationService._internal({
+    FlutterLocalNotificationsPlugin? notifications,
+    NotificationAnalyticsService? analyticsService,
+  })  : _notifications = notifications ?? FlutterLocalNotificationsPlugin(),
+        _analyticsService = analyticsService ?? NotificationAnalyticsService();
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
-  final NotificationAnalyticsService _analyticsService = NotificationAnalyticsService();
+  @visibleForTesting
+  factory NotificationService.test({
+    required FlutterLocalNotificationsPlugin notifications,
+    NotificationAnalyticsService? analyticsService,
+  }) {
+    return NotificationService._internal(
+      notifications: notifications,
+      analyticsService: analyticsService,
+    );
+  }
+
+  final FlutterLocalNotificationsPlugin _notifications;
+  final NotificationAnalyticsService _analyticsService;
+  static const int _intervalScheduleWeeks = 4;
+  static const int _intervalWeekOffsetStride = 1000;
 
   Future<void> initialize() async {
     tz.initializeTimeZones();
@@ -90,7 +108,7 @@ class NotificationService {
         final today = now.weekday;
         
         // Schedule for the next 4 weeks to ensure we have enough notifications scheduled
-        for (int weekOffset = 0; weekOffset < 4; weekOffset++) {
+        for (int weekOffset = 0; weekOffset < _intervalScheduleWeeks; weekOffset++) {
           // Calculate days until target day
           int daysUntilTarget = dayOfWeek - today + (weekOffset * 7);
           if (daysUntilTarget < 0) {
@@ -144,7 +162,12 @@ class NotificationService {
             
             try {
               // Create unique ID for each notification (include week offset to ensure uniqueness)
-              int notificationId = _getNotificationId(reminder.id, dayOfWeek) + notificationCount + (weekOffset * 1000);
+              final notificationId = _getIntervalNotificationId(
+                reminder.id,
+                dayOfWeek,
+                weekOffset,
+                notificationCount,
+              );
               
               await _notifications.zonedSchedule(
                 notificationId,
@@ -255,26 +278,90 @@ class NotificationService {
     return reminderId.hashCode + dayOfWeek;
   }
 
+  int _getIntervalNotificationId(
+    String reminderId,
+    int dayOfWeek,
+    int weekOffset,
+    int notificationCount,
+  ) {
+    return _getNotificationId(reminderId, dayOfWeek) +
+        notificationCount +
+        (weekOffset * _intervalWeekOffsetStride);
+  }
+
+  int _getIntervalSlotsPerDay(Reminder reminder) {
+    if (!reminder.isInterval ||
+        reminder.intervalMinutes == null ||
+        reminder.startTime == null ||
+        reminder.endTime == null) {
+      return 0;
+    }
+    final dailyWindowMinutes = DateTime(
+      0,
+      1,
+      1,
+      reminder.endTime!.hour,
+      reminder.endTime!.minute,
+    )
+        .difference(
+          DateTime(
+            0,
+            1,
+            1,
+            reminder.startTime!.hour,
+            reminder.startTime!.minute,
+          ),
+        )
+        .inMinutes;
+    if (dailyWindowMinutes < 0) return 0;
+    return (dailyWindowMinutes ~/ reminder.intervalMinutes!) + 1;
+  }
+
+  @visibleForTesting
+  List<int> expectedReminderNotificationIds(Reminder reminder) {
+    final ids = <int>[];
+    for (final dayOfWeek in reminder.daysOfWeek) {
+      if (reminder.isInterval) {
+        final slotsPerDay = _getIntervalSlotsPerDay(reminder);
+        for (int weekOffset = 0;
+            weekOffset < _intervalScheduleWeeks;
+            weekOffset++) {
+          for (int notificationCount = 0;
+              notificationCount < slotsPerDay;
+              notificationCount++) {
+            ids.add(_getIntervalNotificationId(
+              reminder.id,
+              dayOfWeek,
+              weekOffset,
+              notificationCount,
+            ));
+          }
+        }
+      } else {
+        ids.add(_getNotificationId(reminder.id, dayOfWeek));
+      }
+    }
+    return ids;
+  }
+
   Future<void> cancelReminder(Reminder reminder) async {
     for (int dayOfWeek in reminder.daysOfWeek) {
       // Cancel all notifications for this reminder and day
       // For interval reminders, we need to cancel multiple notifications
       if (reminder.isInterval && reminder.intervalMinutes != null && reminder.startTime != null && reminder.endTime != null) {
-        // Calculate how many notifications were scheduled
-        DateTime start = _getNextInstanceOfDay(dayOfWeek, reminder.startTime!);
-        DateTime end = _getNextInstanceOfDay(dayOfWeek, reminder.endTime!);
-        if (end.isBefore(start)) {
-          end = end.add(const Duration(days: 7));
-        }
-        
-        // Cancel all notifications for this reminder
-        int notificationCount = 0;
-        DateTime currentTime = start;
-        while (currentTime.isBefore(end) || currentTime.isAtSameMomentAs(end)) {
-          int notificationId = _getNotificationId(reminder.id, dayOfWeek) + notificationCount;
-          await _notifications.cancel(notificationId);
-          currentTime = currentTime.add(Duration(minutes: reminder.intervalMinutes!));
-          notificationCount++;
+        final slotsPerDay = _getIntervalSlotsPerDay(reminder);
+        for (int weekOffset = 0; weekOffset < _intervalScheduleWeeks; weekOffset++) {
+          for (int notificationCount = 0;
+              notificationCount < slotsPerDay;
+              notificationCount++) {
+            final notificationId = _getIntervalNotificationId(
+              reminder.id,
+              dayOfWeek,
+              weekOffset,
+              notificationCount,
+            );
+            await _notifications.cancel(notificationId);
+          }
         }
       } else {
         // For regular reminders, just cancel the single notification

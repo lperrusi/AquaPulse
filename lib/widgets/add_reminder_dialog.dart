@@ -2,6 +2,8 @@
 ///
 /// Dialog for creating new reminders with icon selection, time picker, and day selection.
 /// Matches Figma design exactly.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';

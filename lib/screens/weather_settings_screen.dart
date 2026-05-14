@@ -2,6 +2,8 @@
 ///
 /// Allows users to configure weather update frequency and other weather-related settings.
 /// Provides options for background updates, update intervals, and weather preferences.
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

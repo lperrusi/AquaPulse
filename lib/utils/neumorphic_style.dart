@@ -2,6 +2,8 @@
 ///
 /// Provides consistent neumorphic styling throughout the app to match the soft UI design
 /// of the app icon. Includes shadow configurations, border radius, and color schemes.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 
@@ -69,20 +71,20 @@ class NeumorphicStyle {
     bool isPressed = false,
   }) {
     return ButtonStyle(
-      backgroundColor: MaterialStateProperty.all(
+      backgroundColor: WidgetStateProperty.all(
         backgroundColor ?? backgroundBlue,
       ),
-      foregroundColor: MaterialStateProperty.all(
+      foregroundColor: WidgetStateProperty.all(
         foregroundColor ?? primaryBlue,
       ),
-      elevation: MaterialStateProperty.all(0),
-      shadowColor: MaterialStateProperty.all(Colors.transparent),
-      shape: MaterialStateProperty.all(
+      elevation: WidgetStateProperty.all(0),
+      shadowColor: WidgetStateProperty.all(Colors.transparent),
+      shape: WidgetStateProperty.all(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),
       ),
-      padding: MaterialStateProperty.all(
+      padding: WidgetStateProperty.all(
         const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       ),
     );

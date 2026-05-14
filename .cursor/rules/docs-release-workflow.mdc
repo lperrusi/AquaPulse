@@ -1,0 +1,19 @@
+---
+description: Documentation and release checklist consistency
+globs: "*.md"
+alwaysApply: false
+---
+
+# Docs and Release Workflow Standards
+
+- Keep roadmap/checklist docs actionable and ordered; prefer checklists for release-critical steps.
+- When steps reference code changes, include exact paths and keep links current.
+- Update related docs together (for example publish roadmap + production checklist) when behavior changes.
+- Distinguish clearly between required pre-release items and post-launch improvements.
+- Record known issues with impact and mitigation, not just symptoms.
+- Use concise language and avoid duplicate sections that can drift over time.
+
+## Quick Checks
+
+- Versioned/release instructions still match current commands and artifact paths.
+- Privacy, support, and store metadata references point to the canonical source in code/docs.

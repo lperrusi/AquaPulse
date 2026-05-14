@@ -7,12 +7,17 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:285299670930:android:ebfa9119e6f9131e560b4b",
+        "mobilesdk_app_id": "1:285299670930:android:c24f153ea0038d0b560b4b",
         "android_client_info": {
-          "package_name": "com.example.hydration_tracker"
+          "package_name": "com.lucasperrusi.aquapulse"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "285299670930-c70u2cb5gls9k5t4e0808rbjd121eogq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB768jjWb9Y0D7A_ftxQQyqWz7GMKI0UNE"
@@ -20,7 +25,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "285299670930-c70u2cb5gls9k5t4e0808rbjd121eogq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.hydrationTracker"
+              }
+            }
+          ]
         }
       }
     }

@@ -2,36 +2,29 @@
 ///
 /// The main home screen of the app. Displays hydration progress, quick add buttons, streaks, recent intakes, and provides navigation to other sections (Reminders, Stats, Profile).
 /// Uses Riverpod for state management and updates.
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_field
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../providers/app_providers.dart';
 
-import '../widgets/hydration_progress_card.dart';
-import '../widgets/water_intake_buttons.dart';
-import '../widgets/recent_intakes_list.dart';
-import '../widgets/streak_card.dart';
 import '../widgets/weather_card.dart';
 import '../widgets/progress_circle.dart';
 import '../utils/neumorphic_style.dart';
-import '../main.dart';
 import 'profile_screen.dart';
 import 'reminders_screen.dart';
 import 'stats_screen.dart';
-import 'achievements_screen.dart';
 import 'social_screen.dart';
 import 'package:uuid/uuid.dart';
 import '../models/water_intake.dart';
-import '../services/auth_service.dart';
-import '../services/weather_service.dart';
 import '../services/notification_service.dart';
 import '../services/ad_service.dart';
-import '../screens/weather_settings_screen.dart';
 // import '../screens/premium_screen.dart';
 
 /// The main DashboardScreen widget, which is a stateful consumer widget for the app's home/dashboard.
@@ -45,6 +38,8 @@ class DashboardScreen extends ConsumerStatefulWidget {
 /// State class for DashboardScreen. Handles navigation, tab selection, and hydration data loading.
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
+  static const int _minCustomIntakeMl = 1;
+  static const int _maxCustomIntakeMl = 10000;
   int _selectedIndex = 0;
   int _lastNonFabIndex = 0; // Track last non-FAB index for IndexedStack
   late AnimationController _progressAnimation;
@@ -63,6 +58,22 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     setState(() {
       _selectedIndex = index;
     });
+  }
+
+  String? _validateIntakeMlField(String? value) {
+    final trimmed = (value ?? '').trim();
+    if (trimmed.isEmpty) {
+      return 'Please enter an amount';
+    }
+
+    final amount = int.tryParse(trimmed);
+    if (amount == null) {
+      return 'Please enter a valid amount';
+    }
+    if (amount < _minCustomIntakeMl || amount > _maxCustomIntakeMl) {
+      return 'Enter a valid amount ($_minCustomIntakeMl-$_maxCustomIntakeMl ml)';
+    }
+    return null;
   }
 
   @override
@@ -84,6 +95,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
       _startDayCheckTimer();
+      final adService = ref.read(adServiceProvider);
+      adService.ensureBannerLoaded();
+      adService.ensureBannerLoaded(isBottom: true);
     });
   }
 
@@ -103,6 +117,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     // Check for day change when app comes to foreground
     if (state == AppLifecycleState.resumed) {
       _checkForDayChange();
+      final adService = ref.read(adServiceProvider);
+      adService.ensureBannerLoaded();
+      adService.ensureBannerLoaded(isBottom: true);
+      // Refresh weather so location/cache updates after travel or permission changes
+      unawaited(ref.read(weatherProvider.notifier).refreshWeather());
     }
   }
 
@@ -179,8 +198,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       final oldProgress =
           goal > 0 ? (oldIntake / goal).clamp(0.0, double.infinity) : 0.0;
 
-      // Add water intake
-      await ref.read(waterIntakeProvider.notifier).addWaterIntake(intake);
+      try {
+        // Add water intake
+        await ref.read(waterIntakeProvider.notifier).addWaterIntake(intake);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to save water intake: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
 
       // Animate to new progress
       final newHydrationState = ref.read(hydrationStateProvider);
@@ -253,101 +284,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildBody(AdService adService) {
     final hydrationState = ref.watch(hydrationStateProvider);
     final user = ref.watch(currentUserProvider);
-    final authState = ref.watch(authProvider);
 
-    // Show loading while authentication is in progress
-    if (authState == AuthState.loading) {
-      return Container(
-        decoration: NeumorphicStyle.neumorphicGradient(),
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(NeumorphicStyle.primaryBlue),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Loading...',
-                style: TextStyle(
-                  color: NeumorphicStyle.darkText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Show error if authentication failed
-    if (authState == AuthState.error) {
-      return Container(
-        decoration: NeumorphicStyle.neumorphicGradient(),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: NeumorphicStyle.primaryBlue,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Authentication error. Please try logging in again.',
-                style: NeumorphicStyle.neumorphicText(
-                  fontSize: 16,
-                  color: NeumorphicStyle.darkText,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // If user is null and not authenticated, navigate to login
-    if (user == null && authState == AuthState.unauthenticated) {
-      // Navigate to AppRouter which will show LoginScreen
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const AppRouter()),
-            (route) => false,
-          );
-        }
-      });
-      // Show loading while navigating
-      return Container(
-        decoration: NeumorphicStyle.neumorphicGradient(),
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              CircularProgressIndicator(
-                valueColor:
-                    AlwaysStoppedAnimation<Color>(NeumorphicStyle.primaryBlue),
-              ),
-              SizedBox(height: 16),
-              Text(
-                'Loading...',
-                style: TextStyle(
-                  color: NeumorphicStyle.darkText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Show loading while user data is being loaded (but still authenticated)
+    // Local-first mode: wait for local user profile load only.
     if (user == null) {
       return Container(
         decoration: NeumorphicStyle.neumorphicGradient(),
@@ -390,7 +328,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Banner Ad at the top
-                  adService.createBannerAd(ref),
+                  _buildBannerSlot(adService),
 
                   // Header with logo and app name
                   _buildHeader(),
@@ -427,8 +365,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ),
 
                   // Banner Ad at the bottom
-                  const SizedBox(height: 24),
-                  adService.createBannerAd(ref, isBottom: true),
+                  _buildBannerSlot(
+                    adService,
+                    isBottom: true,
+                    addTopSpacing: true,
+                  ),
                 ],
               ),
             ),
@@ -443,6 +384,77 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         // Index 4: Social screen
         const SocialScreen(),
       ],
+    );
+  }
+
+  Widget _buildBannerSlot(
+    AdService adService, {
+    bool isBottom = false,
+    bool addTopSpacing = false,
+  }) {
+    final bannerState =
+        isBottom ? adService.bottomBannerState : adService.topBannerState;
+    return ValueListenableBuilder<BannerSlotState>(
+      valueListenable: bannerState,
+      builder: (context, state, _) {
+        if (state.status != BannerLoadState.loaded || state.ad == null) {
+          if (kDebugMode) {
+            return _buildBannerDebugBadge(
+              isBottom: isBottom,
+              state: state,
+              addTopSpacing: addTopSpacing,
+            );
+          }
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(top: addTopSpacing ? 24 : 0),
+          child: Container(
+            key: Key(
+                isBottom ? 'dashboard_banner_bottom' : 'dashboard_banner_top'),
+            width: double.infinity,
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(
+                  color: Colors.grey[300]!,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: AdWidget(ad: state.ad!),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBannerDebugBadge({
+    required bool isBottom,
+    required BannerSlotState state,
+    required bool addTopSpacing,
+  }) {
+    final slot = isBottom ? 'Bottom' : 'Top';
+    final errorText = (state.lastError == null || state.lastError!.isEmpty)
+        ? 'none'
+        : state.lastError!;
+    return Padding(
+      padding:
+          EdgeInsets.only(top: addTopSpacing ? 24 : 0, left: 12, right: 12),
+      child: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3CD),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFFFE69C)),
+        ),
+        child: Text(
+          'Ad Debug [$slot]: state=${state.status.name}, attempts=${state.attemptCount}, unit=${state.adUnitId ?? 'n/a'}, error=$errorText',
+          style: const TextStyle(fontSize: 11, color: Color(0xFF664D03)),
+        ),
+      ),
     );
   }
 
@@ -499,6 +511,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           goal: goal,
           size: 200,
           strokeWidth: 12,
+          onTap: _showCustomIntakeDialog,
         );
       },
     );
@@ -929,6 +942,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 padding: const EdgeInsets.fromLTRB(
                     24, 0, 24, 12), // px-6, mt-4, mb-3
                 child: Container(
+                  key: const Key('open_custom_amount_dialog_button'),
                   decoration: BoxDecoration(
                     gradient: NeumorphicStyle.primaryGradient(),
                     borderRadius: BorderRadius.circular(16), // rounded-2xl
@@ -1120,8 +1134,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                         child: Form(
                           key: formKey,
                           child: TextFormField(
+                            key: const Key('custom_amount_ml_field'),
                             controller: controller,
                             keyboardType: TextInputType.number,
+                            inputFormatters: <TextInputFormatter>[
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
                             autofocus: true,
                             decoration: InputDecoration(
                               hintText: 'Enter amount',
@@ -1151,14 +1169,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                               fontWeight: FontWeight.w400,
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return 'Please enter an amount';
-                              }
-                              final amount = double.tryParse(value);
-                              if (amount == null || amount <= 0) {
-                                return 'Please enter a valid amount';
-                              }
-                              return null;
+                              return _validateIntakeMlField(value);
                             },
                           ),
                         ),
@@ -1218,9 +1229,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                 onPressed: () {
                                   if (formKey.currentState!.validate()) {
                                     final amount =
-                                        double.parse(controller.text);
+                                        int.parse(controller.text.trim());
                                     Navigator.of(context).pop();
-                                    _recordWaterIntake(amount);
+                                    _recordWaterIntake(amount.toDouble());
                                   }
                                 },
                                 style: ElevatedButton.styleFrom(
@@ -1308,6 +1319,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 child: TextFormField(
                   controller: controller,
                   keyboardType: TextInputType.number,
+                  inputFormatters: <TextInputFormatter>[
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
                   decoration: InputDecoration(
                     labelText: 'Amount (ml)',
                     border: OutlineInputBorder(
@@ -1335,14 +1349,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     fontWeight: FontWeight.w500,
                   ),
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter an amount';
-                    }
-                    final amount = double.tryParse(value);
-                    if (amount == null || amount <= 0) {
-                      return 'Please enter a valid amount';
-                    }
-                    return null;
+                    return _validateIntakeMlField(value);
                   },
                 ),
               ),
@@ -1380,7 +1387,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     child: ElevatedButton(
                       onPressed: () {
                         if (formKey.currentState!.validate()) {
-                          final newAmount = double.parse(controller.text);
+                          final newAmount =
+                              double.parse(controller.text.trim());
                           _updateWaterIntake(intake, newAmount);
                           Navigator.of(context).pop();
                         }
@@ -1433,9 +1441,21 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         note: intake.note,
       );
 
-      await ref
-          .read(waterIntakeProvider.notifier)
-          .updateWaterIntake(updatedIntake);
+      try {
+        await ref
+            .read(waterIntakeProvider.notifier)
+            .updateWaterIntake(updatedIntake);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to update water intake: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
 
       // Animate to new progress
       final newHydrationState = ref.read(hydrationStateProvider);
@@ -1541,6 +1561,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   Widget _buildCenterButton() {
     return GestureDetector(
+      key: const Key('open_add_intake_dialog_button'),
       onTap: _showCustomIntakeDialog,
       child: Container(
         width: 60, // w-[60px] h-[60px]

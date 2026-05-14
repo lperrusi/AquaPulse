@@ -2,6 +2,8 @@
 ///
 /// Screen for managing notification preferences including types, sound, vibration, and do not disturb.
 /// Matches Figma design exactly.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 import '../utils/neumorphic_style.dart';
@@ -249,7 +251,7 @@ class _NotificationSettingsScreenState
                                 _notificationsEnabled = value;
                               });
                             },
-                            activeColor: NeumorphicStyle.primaryBlue,
+                            activeThumbColor: NeumorphicStyle.primaryBlue,
                           ),
                         ],
                       ),
@@ -315,7 +317,7 @@ class _NotificationSettingsScreenState
                                     _notificationTypes[id] = value;
                                   });
                                 },
-                                activeColor: NeumorphicStyle.primaryBlue,
+                                activeThumbColor: NeumorphicStyle.primaryBlue,
                               ),
                             ],
                           ),
@@ -398,7 +400,7 @@ class _NotificationSettingsScreenState
                                   _sound = value;
                                 });
                               },
-                              activeColor: NeumorphicStyle.primaryBlue,
+                              activeThumbColor: NeumorphicStyle.primaryBlue,
                             ),
                           ],
                         ),
@@ -468,7 +470,7 @@ class _NotificationSettingsScreenState
                                   _vibration = value;
                                 });
                               },
-                              activeColor: NeumorphicStyle.primaryBlue,
+                              activeThumbColor: NeumorphicStyle.primaryBlue,
                             ),
                           ],
                         ),
@@ -549,7 +551,7 @@ class _NotificationSettingsScreenState
                                       _doNotDisturb = value;
                                     });
                                   },
-                                  activeColor: NeumorphicStyle.primaryBlue,
+                                  activeThumbColor: NeumorphicStyle.primaryBlue,
                                 ),
                               ],
                             ),

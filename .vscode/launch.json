@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "hydration_tracker",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "toolArgs": [
+        "--dart-define=OPEN_WEATHER_API_KEY=${env:OPEN_WEATHER_API_KEY}"
+      ]
+    }
+  ]
+}

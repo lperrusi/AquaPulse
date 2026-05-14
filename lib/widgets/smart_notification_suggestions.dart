@@ -2,6 +2,7 @@
 ///
 /// Displays intelligent notification timing suggestions based on user drinking patterns.
 /// Shows optimal times for notifications and allows users to create reminders from suggestions.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

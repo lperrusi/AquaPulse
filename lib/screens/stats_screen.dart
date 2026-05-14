@@ -2,13 +2,15 @@
 ///
 /// Displays weekly and daily hydration statistics, charts, and achievement progress for the user.
 /// Uses Riverpod for state management and fl_chart for visualizations.
+// ignore_for_file: deprecated_member_use, unused_field, unused_local_variable, unused_element, dead_null_aware_expression
+library;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../providers/app_providers.dart';
 import '../models/water_intake.dart';
 import '../models/achievement.dart';
-import '../services/hydration_service.dart';
 import '../utils/neumorphic_style.dart';
 
 /// The main StatsScreen widget, which is a stateful consumer widget for hydration statistics and analytics.
@@ -29,6 +31,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> with SingleTickerProv
   bool _isLoadingAchievements = true;
   List<WaterIntake> _allHistoricalIntakes = []; // Store all historical intakes
   bool _isLoadingHistoricalData = true;
+  int _lastSyncedWaterIntakeCount = -1;
+  String _lastStatsDebugSignature = '';
 
   @override
   void initState() {
@@ -36,16 +40,6 @@ class _StatsScreenState extends ConsumerState<StatsScreen> with SingleTickerProv
     _tabController = TabController(length: 2, vsync: this);
     _loadWeekData();
     _loadAchievements();
-  }
-  
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Always refresh historical data when screen becomes visible to show latest data
-    // This ensures stats are updated after adding water intake
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadWeekData();
-    });
   }
   
   @override
@@ -392,26 +386,39 @@ class _StatsScreenState extends ConsumerState<StatsScreen> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final hydrationState = ref.watch(hydrationStateProvider);
-    final waterIntakes = ref.watch(waterIntakeProvider); // Watch water intake provider to refresh when data changes
+    // Watch water intake provider to refresh stats when intake count changes.
+    final waterIntakes = ref.watch(waterIntakeProvider);
     final weekRange = _getSelectedWeekRange();
-    
-    // Always reload historical data when screen is built to ensure we have latest data
-    // This ensures stats are updated after adding water intake
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _loadWeekData();
-      }
-    });
+
+    final currentWaterIntakeCount = waterIntakes.length;
+    if (currentWaterIntakeCount != _lastSyncedWaterIntakeCount) {
+      _lastSyncedWaterIntakeCount = currentWaterIntakeCount;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _loadWeekData();
+        }
+      });
+    }
     
     // Filter all historical intakes for the selected week range
     final weeklyIntakes = _filterIntakesByDateRange(_allHistoricalIntakes, weekRange.start, weekRange.end);
     
-    // Debug: Print stats for troubleshooting
-    debugPrint('Stats Screen - Total historical intakes: ${_allHistoricalIntakes.length}');
-    debugPrint('Stats Screen - Weekly intakes for selected week: ${weeklyIntakes.length}');
-    if (weeklyIntakes.isNotEmpty) {
-      debugPrint('Stats Screen - First intake: ${weeklyIntakes.first.amount}ml at ${weeklyIntakes.first.timestamp}');
-      debugPrint('Stats Screen - Week range: ${weekRange.start} to ${weekRange.end}');
+    // Debug logs only when selected stats snapshot changes.
+    if (kDebugMode) {
+      final signature =
+          '${_allHistoricalIntakes.length}|${weeklyIntakes.length}|${weekRange.start.millisecondsSinceEpoch}|${weekRange.end.millisecondsSinceEpoch}';
+      if (signature != _lastStatsDebugSignature) {
+        _lastStatsDebugSignature = signature;
+        debugPrint(
+            'Stats Screen - Total historical intakes: ${_allHistoricalIntakes.length}');
+        debugPrint(
+            'Stats Screen - Weekly intakes for selected week: ${weeklyIntakes.length}');
+        if (weeklyIntakes.isNotEmpty) {
+          debugPrint(
+              'Stats Screen - First intake: ${weeklyIntakes.first.amount}ml at ${weeklyIntakes.first.timestamp}');
+          debugPrint('Stats Screen - Week range: ${weekRange.start} to ${weekRange.end}');
+        }
+      }
     }
 
     // Calculate stats

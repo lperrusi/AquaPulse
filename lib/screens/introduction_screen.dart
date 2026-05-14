@@ -2,14 +2,14 @@
 ///
 /// Displays an engaging introduction to the app's features for first-time users.
 /// Uses a page view with smooth animations and clear feature explanations.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import '../providers/app_providers.dart';
 import '../utils/neumorphic_style.dart';
 import 'onboarding_screen.dart';
-import 'login_screen.dart';
 
 /// The main IntroductionScreen widget for showcasing app features to new users
 class IntroductionScreen extends ConsumerStatefulWidget {
@@ -88,7 +88,7 @@ class _IntroductionScreenState extends ConsumerState<IntroductionScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        MaterialPageRoute(builder: (context) => const OnboardingScreen()),
       );
     }
   }
@@ -100,7 +100,7 @@ class _IntroductionScreenState extends ConsumerState<IntroductionScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const LoginScreen()),
+        MaterialPageRoute(builder: (context) => const OnboardingScreen()),
       );
     }
   }

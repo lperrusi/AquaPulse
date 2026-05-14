@@ -2,6 +2,7 @@
 ///
 /// Displays the user's current hydration streak, achievement level, and next milestone.
 /// Used on the dashboard to motivate users to maintain their hydration habit.
+library;
 
 import 'package:flutter/material.dart';
 import '../services/hydration_service.dart';

@@ -2,6 +2,8 @@
 ///
 /// Displays user achievements, progress tracking, and social sharing capabilities.
 /// Shows unlocked and locked achievements with progress indicators.
+// ignore_for_file: dead_null_aware_expression
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,7 +36,6 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
     try {
       // Load all achievements and check unlock status
       final allAchievements = AchievementDefinitions.allAchievements;
-      final user = ref.read(currentUserProvider);
       final hydrationState = ref.read(hydrationStateProvider);
       
       // Check which achievements are unlocked
@@ -51,30 +52,30 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
             }
             break;
             
-                             case AchievementType.goal:
-                     // Check if user has met their daily goal consistently
-                     final goalAchievements = [7, 30]; // Days in a row
-                     final currentGoal = hydrationState.dailyGoal;
-                     final todayIntake = hydrationState.todayIntake;
-                     
-                     // Check if today's goal was met
-                     if (todayIntake >= currentGoal) {
-                       // For demo purposes, unlock based on current streak
-                       isUnlocked = hydrationState.currentStreak >= achievement.requirement;
-                       if (isUnlocked && achievement.unlockedAt == null) {
-                         unlockedAt = DateTime.now();
-                       }
-                     }
-                     break;
+          case AchievementType.goal:
+            // Check if user has met their daily goal consistently
+            final currentGoal = hydrationState.dailyGoal;
+            final todayIntake = hydrationState.todayIntake;
 
-                   case AchievementType.milestone:
-                     // Calculate total intake from all water intakes
-                     final totalIntake = hydrationState.totalIntake ?? 0;
-                     isUnlocked = totalIntake >= achievement.requirement;
-                     if (isUnlocked && achievement.unlockedAt == null) {
-                       unlockedAt = DateTime.now();
-                     }
-                     break;
+            // Check if today's goal was met
+            if (todayIntake >= currentGoal) {
+              // For demo purposes, unlock based on current streak
+              isUnlocked =
+                  hydrationState.currentStreak >= achievement.requirement;
+              if (isUnlocked && achievement.unlockedAt == null) {
+                unlockedAt = DateTime.now();
+              }
+            }
+            break;
+
+          case AchievementType.milestone:
+            // Calculate total intake from all water intakes
+            final totalIntake = hydrationState.totalIntake;
+            isUnlocked = totalIntake >= achievement.requirement;
+            if (isUnlocked && achievement.unlockedAt == null) {
+              unlockedAt = DateTime.now();
+            }
+            break;
             
           case AchievementType.social:
             isUnlocked = false;
@@ -395,7 +396,8 @@ class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
   void _showShareStats() async {
     final socialService = SocialSharingService();
     final stats = await socialService.getShareStats();
-    
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

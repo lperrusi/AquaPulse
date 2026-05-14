@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user.dart';
@@ -25,20 +26,24 @@ class FirebaseService {
   late firebase_auth.FirebaseAuth _auth;
   late FirebaseFirestore _firestore;
   late FirebaseAnalytics _analytics;
+  late FirebaseFunctions _functions;
 
   /// Initialize Firebase services
   /// Note: Firebase.initializeApp() should already be called in main.dart
   /// This method just initializes the service instances
   Future<void> initialize() async {
-    // Firebase is already initialized in main.dart, so we just get the instances
-    // Check if Firebase apps are empty (not initialized)
+    // Firebase must be initialized in main.dart before this service is used.
+    // Avoiding fallback initializeApp() here prevents accidental init with
+    // missing/default options in secondary startup paths.
     if (Firebase.apps.isEmpty) {
-      // If not initialized, initialize it
-      await Firebase.initializeApp();
+      throw StateError(
+        'FirebaseService.initialize called before Firebase.initializeApp in main().',
+      );
     }
     _auth = firebase_auth.FirebaseAuth.instance;
     _firestore = FirebaseFirestore.instance;
     _analytics = FirebaseAnalytics.instance;
+    _functions = FirebaseFunctions.instance;
   }
 
   /// Get current authenticated user
@@ -96,6 +101,60 @@ class FirebaseService {
     await _analytics.logEvent(name: 'password_reset_requested');
   }
 
+  /// Requests a password reset verification code via Cloud Function
+  Future<Map<String, dynamic>> requestPasswordResetCode(String email) async {
+    final callable = _functions.httpsCallable('requestPasswordResetCode');
+    final response = await callable.call(<String, dynamic>{'email': email});
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Verifies a password reset code and returns a reset session token
+  Future<Map<String, dynamic>> verifyPasswordResetCode(
+      String email, String code) async {
+    final callable = _functions.httpsCallable('verifyPasswordResetCode');
+    final response = await callable.call(<String, dynamic>{
+      'email': email,
+      'code': code,
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Confirms password reset with a verified reset session token
+  Future<Map<String, dynamic>> confirmPasswordResetWithCode({
+    required String email,
+    required String resetSessionToken,
+    required String newPassword,
+  }) async {
+    final callable = _functions.httpsCallable('confirmPasswordResetWithCode');
+    final response = await callable.call(<String, dynamic>{
+      'email': email,
+      'resetSessionToken': resetSessionToken,
+      'newPassword': newPassword,
+    });
+    return Map<String, dynamic>.from(response.data as Map);
+  }
+
+  /// Fetches current weather via Cloud Function (OpenWeather key stays on server).
+  /// Returns the OpenWeatherMap-shaped JSON map expected by [WeatherData.fromJson].
+  Future<Map<String, dynamic>> getCurrentWeatherViaProxy({
+    required double lat,
+    required double lon,
+    String units = 'metric',
+  }) async {
+    final callable = _functions.httpsCallable('getCurrentWeatherProxy');
+    final response = await callable.call(<String, dynamic>{
+      'lat': lat,
+      'lon': lon,
+      'units': units,
+    });
+    final map = Map<String, dynamic>.from(response.data as Map);
+    final weather = map['weather'];
+    if (weather is Map) {
+      return Map<String, dynamic>.from(weather);
+    }
+    throw StateError('Invalid weather proxy response');
+  }
+
   /// Sign in with Google (returns Firebase UserCredential)
   Future<firebase_auth.UserCredential> signInWithGoogle() async {
     final googleSignIn = GoogleSignIn();
@@ -121,16 +180,23 @@ class FirebaseService {
   /// Create or update user profile
   Future<void> createOrUpdateUser(User user) async {
     try {
-      debugPrint(
-          '[ProfilePersistence] Firestore.createOrUpdateUser: writing user id=${user.id} age=${user.age} gender=${user.gender}');
+      if (kDebugMode) {
+        debugPrint(
+            '[ProfilePersistence] Firestore.createOrUpdateUser: writing profile');
+      }
       await _firestore.collection('users').doc(user.id).set(user.toJson());
       await _analytics.logEvent(name: 'user_profile_updated');
-      debugPrint('[ProfilePersistence] Firestore.createOrUpdateUser: done');
+      if (kDebugMode) {
+        debugPrint('[ProfilePersistence] Firestore.createOrUpdateUser: done');
+      }
     } catch (e) {
       await _analytics.logEvent(
           name: 'user_profile_error',
           parameters: <String, Object>{'error': e.toString()});
-      debugPrint('[ProfilePersistence] Firestore.createOrUpdateUser error: $e');
+      if (kDebugMode) {
+        debugPrint(
+            '[ProfilePersistence] Firestore.createOrUpdateUser error: $e');
+      }
       rethrow;
     }
   }
@@ -141,19 +207,32 @@ class FirebaseService {
       final doc = await _firestore.collection('users').doc(userId).get();
       if (doc.exists) {
         final user = User.fromJson(doc.data()!);
-        debugPrint(
-            '[ProfilePersistence] Firestore.getUser: loaded id=${user.id} age=${user.age} gender=${user.gender}');
+        if (kDebugMode) {
+          debugPrint('[ProfilePersistence] Firestore.getUser: profile loaded');
+        }
         return user;
       }
-      debugPrint('[ProfilePersistence] Firestore.getUser: no doc for $userId');
+      if (kDebugMode) {
+        debugPrint(
+            '[ProfilePersistence] Firestore.getUser: no profile document');
+      }
       return null;
     } catch (e) {
       await _analytics.logEvent(
           name: 'get_user_error',
           parameters: <String, Object>{'error': e.toString()});
-      debugPrint('[ProfilePersistence] Firestore.getUser error: $e');
+      if (kDebugMode) {
+        debugPrint('[ProfilePersistence] Firestore.getUser error: $e');
+      }
       rethrow;
     }
+  }
+
+  /// Delete user Firestore document and Firebase Auth account
+  Future<void> deleteUserAccountData(String userId) async {
+    await _firestore.collection('users').doc(userId).delete();
+    await _auth.currentUser?.delete();
+    await _analytics.logEvent(name: 'account_deleted');
   }
 
   /// Search users by name or email

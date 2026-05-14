@@ -1,18 +1,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/introduction_screen.dart';
-import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 import 'providers/app_providers.dart';
 import 'services/notification_service.dart';
-import 'services/auth_service.dart';
 import 'services/firebase_service.dart';
 import 'services/ad_service.dart';
 
@@ -25,15 +23,15 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(const Duration(seconds: 10));
-    debugPrint('Firebase initialized successfully');
+    if (kDebugMode) debugPrint('Firebase initialized successfully');
 
     // Initialize Firebase service with timeout
     try {
       final firebaseService = FirebaseService();
       await firebaseService.initialize().timeout(const Duration(seconds: 5));
-      debugPrint('Firebase service initialized successfully');
+      if (kDebugMode) debugPrint('Firebase service initialized successfully');
     } catch (e) {
-      debugPrint('Firebase service initialization failed: $e');
+      if (kDebugMode) debugPrint('Firebase service initialization failed: $e');
       // Continue anyway
     }
 
@@ -46,9 +44,13 @@ void main() async {
       await notificationService
           .requestPermissions()
           .timeout(const Duration(seconds: 5));
-      debugPrint('Notification service initialized successfully');
+      if (kDebugMode) {
+        debugPrint('Notification service initialized successfully');
+      }
     } catch (e) {
-      debugPrint('Notification service initialization failed: $e');
+      if (kDebugMode) {
+        debugPrint('Notification service initialization failed: $e');
+      }
       // Continue even if notification service fails
     }
 
@@ -56,81 +58,53 @@ void main() async {
     try {
       final adService = AdService.instance;
       await adService.initialize().timeout(const Duration(seconds: 5));
-      debugPrint('Ad service initialized successfully');
+      if (kDebugMode) debugPrint('Ad service initialized successfully');
     } catch (e) {
-      debugPrint('Ad service initialization failed: $e');
+      if (kDebugMode) debugPrint('Ad service initialization failed: $e');
       // Continue even if ad service fails
     }
   } catch (e, stackTrace) {
-    debugPrint('Error during initialization: $e');
-    debugPrint('Stack trace: $stackTrace');
+    if (kDebugMode) {
+      debugPrint('Error during initialization: $e');
+      debugPrint('Stack trace: $stackTrace');
+    }
     // Continue anyway - app should still work without some services
   }
 
   runApp(const ProviderScope(child: HydrationTrackerApp()));
 }
 
-/// Builds text theme with Inter when available; falls back to platform font if
-/// AssetManifest isn't ready (e.g. avoids google_fonts crash on first run / hot reload).
+/// Builds app text theme from platform fonts.
 TextTheme _buildTextTheme() {
+  final base = ThemeData.light().textTheme;
   const color = Color(0xFF2C3E50);
   const colorSecondary = Color(0xFF7F8C8D);
-  try {
-    return GoogleFonts.interTextTheme().copyWith(
-      displayLarge: GoogleFonts.inter(
-          fontSize: 32, fontWeight: FontWeight.w600, color: color),
-      displayMedium: GoogleFonts.inter(
-          fontSize: 28, fontWeight: FontWeight.w600, color: color),
-      displaySmall: GoogleFonts.inter(
-          fontSize: 24, fontWeight: FontWeight.w600, color: color),
-      headlineLarge: GoogleFonts.inter(
-          fontSize: 22, fontWeight: FontWeight.w600, color: color),
-      headlineMedium: GoogleFonts.inter(
-          fontSize: 20, fontWeight: FontWeight.w600, color: color),
-      headlineSmall: GoogleFonts.inter(
-          fontSize: 18, fontWeight: FontWeight.w600, color: color),
-      titleLarge: GoogleFonts.inter(
-          fontSize: 16, fontWeight: FontWeight.w600, color: color),
-      titleMedium: GoogleFonts.inter(
-          fontSize: 14, fontWeight: FontWeight.w500, color: color),
-      titleSmall: GoogleFonts.inter(
-          fontSize: 12, fontWeight: FontWeight.w500, color: color),
-      bodyLarge: GoogleFonts.inter(
-          fontSize: 16, fontWeight: FontWeight.w400, color: color),
-      bodyMedium: GoogleFonts.inter(
-          fontSize: 14, fontWeight: FontWeight.w400, color: color),
-      bodySmall: GoogleFonts.inter(
-          fontSize: 12, fontWeight: FontWeight.w400, color: colorSecondary),
-    );
-  } catch (_) {
-    final base = ThemeData.light().textTheme;
-    return base.copyWith(
-      displayLarge: base.displayLarge
-          ?.copyWith(fontSize: 32, fontWeight: FontWeight.w600, color: color),
-      displayMedium: base.displayMedium
-          ?.copyWith(fontSize: 28, fontWeight: FontWeight.w600, color: color),
-      displaySmall: base.displaySmall
-          ?.copyWith(fontSize: 24, fontWeight: FontWeight.w600, color: color),
-      headlineLarge: base.headlineLarge
-          ?.copyWith(fontSize: 22, fontWeight: FontWeight.w600, color: color),
-      headlineMedium: base.headlineMedium
-          ?.copyWith(fontSize: 20, fontWeight: FontWeight.w600, color: color),
-      headlineSmall: base.headlineSmall
-          ?.copyWith(fontSize: 18, fontWeight: FontWeight.w600, color: color),
-      titleLarge: base.titleLarge
-          ?.copyWith(fontSize: 16, fontWeight: FontWeight.w600, color: color),
-      titleMedium: base.titleMedium
-          ?.copyWith(fontSize: 14, fontWeight: FontWeight.w500, color: color),
-      titleSmall: base.titleSmall
-          ?.copyWith(fontSize: 12, fontWeight: FontWeight.w500, color: color),
-      bodyLarge: base.bodyLarge
-          ?.copyWith(fontSize: 16, fontWeight: FontWeight.w400, color: color),
-      bodyMedium: base.bodyMedium
-          ?.copyWith(fontSize: 14, fontWeight: FontWeight.w400, color: color),
-      bodySmall: base.bodySmall?.copyWith(
-          fontSize: 12, fontWeight: FontWeight.w400, color: colorSecondary),
-    );
-  }
+  return base.copyWith(
+    displayLarge: base.displayLarge
+        ?.copyWith(fontSize: 32, fontWeight: FontWeight.w600, color: color),
+    displayMedium: base.displayMedium
+        ?.copyWith(fontSize: 28, fontWeight: FontWeight.w600, color: color),
+    displaySmall: base.displaySmall
+        ?.copyWith(fontSize: 24, fontWeight: FontWeight.w600, color: color),
+    headlineLarge: base.headlineLarge
+        ?.copyWith(fontSize: 22, fontWeight: FontWeight.w600, color: color),
+    headlineMedium: base.headlineMedium
+        ?.copyWith(fontSize: 20, fontWeight: FontWeight.w600, color: color),
+    headlineSmall: base.headlineSmall
+        ?.copyWith(fontSize: 18, fontWeight: FontWeight.w600, color: color),
+    titleLarge: base.titleLarge
+        ?.copyWith(fontSize: 16, fontWeight: FontWeight.w600, color: color),
+    titleMedium: base.titleMedium
+        ?.copyWith(fontSize: 14, fontWeight: FontWeight.w500, color: color),
+    titleSmall: base.titleSmall
+        ?.copyWith(fontSize: 12, fontWeight: FontWeight.w500, color: color),
+    bodyLarge: base.bodyLarge
+        ?.copyWith(fontSize: 16, fontWeight: FontWeight.w400, color: color),
+    bodyMedium: base.bodyMedium
+        ?.copyWith(fontSize: 14, fontWeight: FontWeight.w400, color: color),
+    bodySmall: base.bodySmall?.copyWith(
+        fontSize: 12, fontWeight: FontWeight.w400, color: colorSecondary),
+  );
 }
 
 class HydrationTrackerApp extends ConsumerWidget {
@@ -232,6 +206,25 @@ class HydrationTrackerApp extends ConsumerWidget {
   }
 }
 
+enum AppStartDestination {
+  introduction,
+  onboarding,
+  dashboard,
+}
+
+AppStartDestination determineAppStartDestination({
+  required bool introductionSeen,
+  required bool hasLocalUser,
+}) {
+  if (!introductionSeen) {
+    return AppStartDestination.introduction;
+  }
+  if (hasLocalUser) {
+    return AppStartDestination.dashboard;
+  }
+  return AppStartDestination.onboarding;
+}
+
 /// App Router that handles navigation based on introduction status and user profile
 class AppRouter extends ConsumerStatefulWidget {
   const AppRouter({super.key});
@@ -246,14 +239,26 @@ class _AppRouterState extends ConsumerState<AppRouter> {
   @override
   void initState() {
     super.initState();
-    // Wait a moment for providers to initialize
-    Future.delayed(const Duration(milliseconds: 100), () {
+    _waitForProviders();
+  }
+
+  Future<void> _waitForProviders() async {
+    try {
+      await Future.wait([
+        ref.read(introductionSeenProvider.notifier).initialLoadDone,
+        ref.read(currentUserProvider.notifier).initialLoadDone,
+      ]);
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Error waiting for startup providers: $e');
+      }
+    } finally {
       if (mounted) {
         setState(() {
           _isInitialized = true;
         });
       }
-    });
+    }
   }
 
   @override
@@ -262,16 +267,15 @@ class _AppRouterState extends ConsumerState<AppRouter> {
     try {
       final introductionSeen = ref.watch(introductionSeenProvider);
       final currentUser = ref.watch(currentUserProvider);
-      final authState = ref.watch(authProvider);
-
-      debugPrint(
-          'AppRouter: _isInitialized=$_isInitialized, introductionSeen=$introductionSeen, currentUser=${currentUser?.name}, authState=$authState');
+      if (kDebugMode) {
+        debugPrint(
+            'AppRouter: _isInitialized=$_isInitialized, introductionSeen=$introductionSeen, hasCurrentUser=${currentUser != null}');
+      }
 
       // Show splash screen while determining next screen
       return SplashScreen(
         nextScreen: _isInitialized
-            ? _determineNextScreen(
-                ref, introductionSeen, currentUser, authState)
+            ? _determineNextScreen(ref, introductionSeen, currentUser)
             : const Scaffold(
                 backgroundColor: Color(0xFFFAFCFF),
                 body: Center(
@@ -282,8 +286,10 @@ class _AppRouterState extends ConsumerState<AppRouter> {
               ),
       );
     } catch (e, stackTrace) {
-      debugPrint('Error in AppRouter build: $e');
-      debugPrint('Stack trace: $stackTrace');
+      if (kDebugMode) {
+        debugPrint('Error in AppRouter build: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
       return Scaffold(
         backgroundColor: const Color(0xFFFAFCFF),
         body: Center(
@@ -301,49 +307,35 @@ class _AppRouterState extends ConsumerState<AppRouter> {
   }
 
   // Helper method to determine which screen to show next
-  Widget _determineNextScreen(WidgetRef ref, bool introductionSeen,
-      dynamic currentUser, AuthState authState) {
+  Widget _determineNextScreen(
+      WidgetRef ref, bool introductionSeen, dynamic currentUser) {
     try {
-      debugPrint(
-          '_determineNextScreen: introductionSeen=$introductionSeen, currentUser=${currentUser?.name}, authState=$authState');
-
-      // If auth is still loading, show loading screen
-      if (authState == AuthState.loading) {
-        debugPrint('Showing loading screen (auth loading)');
-        return const Scaffold(
-          backgroundColor: Color(0xFFFAFCFF),
-          body: Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF2196F3),
-            ),
-          ),
-        );
+      if (kDebugMode) {
+        debugPrint(
+            '_determineNextScreen: introductionSeen=$introductionSeen, hasCurrentUser=${currentUser != null}');
       }
 
-      // Show introduction screen if user hasn't seen it
-      if (!introductionSeen) {
-        debugPrint('Showing IntroductionScreen');
-        return const IntroductionScreen();
-      }
+      final destination = determineAppStartDestination(
+        introductionSeen: introductionSeen,
+        hasLocalUser: currentUser != null,
+      );
 
-      // Show dashboard if user has a profile (check this first, even for local users)
-      if (currentUser != null) {
-        debugPrint('Showing DashboardScreen');
-        return const DashboardScreen();
+      switch (destination) {
+        case AppStartDestination.introduction:
+          if (kDebugMode) debugPrint('Showing IntroductionScreen');
+          return const IntroductionScreen();
+        case AppStartDestination.dashboard:
+          if (kDebugMode) debugPrint('Showing DashboardScreen');
+          return const DashboardScreen();
+        case AppStartDestination.onboarding:
+          if (kDebugMode) debugPrint('Showing OnboardingScreen');
+          return const OnboardingScreen();
       }
-
-      // If authenticated but no profile exists, show onboarding (first time login/signup)
-      if (authState == AuthState.authenticated) {
-        debugPrint('Showing OnboardingScreen (authenticated but no profile)');
-        return const OnboardingScreen();
-      }
-
-      // If unauthenticated, show login screen
-      debugPrint('Showing LoginScreen (unauthenticated)');
-      return const LoginScreen();
     } catch (e, stackTrace) {
-      debugPrint('Error in _determineNextScreen: $e');
-      debugPrint('Stack trace: $stackTrace');
+      if (kDebugMode) {
+        debugPrint('Error in _determineNextScreen: $e');
+        debugPrint('Stack trace: $stackTrace');
+      }
       return Scaffold(
         backgroundColor: const Color(0xFFFAFCFF),
         body: Center(

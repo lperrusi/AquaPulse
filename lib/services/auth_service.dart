@@ -8,6 +8,7 @@ library;
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import 'firebase_service.dart';
@@ -93,28 +94,70 @@ class AuthService {
   /// Loads user profile from database
   Future<void> _loadUserProfile(String userId) async {
     try {
-      debugPrint(
-          '[ProfilePersistence] Auth._loadUserProfile: loading for userId=$userId');
+      if (kDebugMode) {
+        debugPrint(
+            '[ProfilePersistence] Auth._loadUserProfile: loading profile');
+      }
       // Try Firestore first
       User? user = await _firebaseService.getUser(userId);
 
       // If not in Firestore, try local database
       if (user == null && _databaseService != null) {
-        debugPrint(
-            '[ProfilePersistence] Auth._loadUserProfile: Firestore null, trying local DB');
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] Auth._loadUserProfile: Firestore empty, trying local DB');
+        }
         user = await _databaseService!.getUser(userId);
       }
 
       if (user != null) {
-        debugPrint(
-            '[ProfilePersistence] Auth._loadUserProfile: loaded user id=${user.id} age=${user.age} gender=${user.gender}');
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] Auth._loadUserProfile: profile loaded');
+        }
         _currentUser = user;
         await _storeUserData(user);
       } else {
-        debugPrint('[ProfilePersistence] Auth._loadUserProfile: no user found');
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] Auth._loadUserProfile: no user found');
+        }
       }
     } catch (e) {
-      debugPrint('[ProfilePersistence] Auth._loadUserProfile error: $e');
+      if (kDebugMode) {
+        debugPrint('[ProfilePersistence] Auth._loadUserProfile error: $e');
+      }
+      // Firestore can be unavailable/misconfigured; fall back to local DB and
+      // then to stored auth so the app can continue offline.
+      try {
+        User? fallbackUser;
+        if (_databaseService != null) {
+          fallbackUser = await _databaseService!.getUser(userId);
+        }
+        if (fallbackUser != null) {
+          if (kDebugMode) {
+            debugPrint(
+                '[ProfilePersistence] Auth._loadUserProfile fallback: loaded from local DB');
+          }
+          _currentUser = fallbackUser;
+          await _storeUserData(fallbackUser);
+          return;
+        }
+      } catch (dbError) {
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] Auth._loadUserProfile local DB fallback error: $dbError');
+        }
+      }
+
+      try {
+        await _loadStoredAuth();
+      } catch (storedError) {
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] Auth._loadUserProfile stored auth fallback error: $storedError');
+        }
+      }
     }
   }
 
@@ -348,6 +391,65 @@ class AuthService {
     }
   }
 
+  /// Deletes the user account and all associated data
+  Future<AuthResult> deleteAccount() async {
+    try {
+      final firebaseUser = _firebaseService.currentUser;
+      final userId = _currentUser?.id ?? firebaseUser?.uid;
+
+      if (userId != null) {
+        if (firebaseUser != null) {
+          try {
+            await _firebaseService.deleteUserAccountData(userId);
+          } on firebase_auth.FirebaseAuthException catch (e) {
+            if (e.code == 'requires-recent-login') {
+              return AuthResult(
+                success: false,
+                message:
+                    'For security, please sign out and sign back in before deleting your account.',
+              );
+            }
+            debugPrint('Firebase account deletion error: $e');
+          } catch (e) {
+            debugPrint('Error deleting Firebase account data: $e');
+          }
+        }
+
+        if (_databaseService != null) {
+          await _databaseService!.deleteAllUserData(userId);
+        }
+      }
+
+      _currentUser = null;
+      _lastLogin = null;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      return AuthResult(
+        success: true,
+        message: 'Your account and all data have been deleted.',
+      );
+    } on firebase_auth.FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        return AuthResult(
+          success: false,
+          message:
+              'For security, please sign out and sign back in before deleting your account.',
+        );
+      }
+      return AuthResult(
+        success: false,
+        message: _getFirebaseErrorMessage(e),
+      );
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        message: 'Failed to delete account: ${e.toString()}',
+      );
+    }
+  }
+
   /// Logs out the current user
   Future<void> logout() async {
     try {
@@ -434,6 +536,11 @@ class AuthService {
 
   /// Sends password reset email via Firebase
   Future<AuthResult> forgotPassword(String email) async {
+    return requestPasswordResetCode(email);
+  }
+
+  /// Requests a one-time password reset verification code
+  Future<AuthResult> requestPasswordResetCode(String email) async {
     try {
       if (!_isValidEmail(email)) {
         return AuthResult(
@@ -442,13 +549,17 @@ class AuthService {
         );
       }
 
-      // Send password reset email via Firebase
-      await _firebaseService.resetPassword(email.toLowerCase());
+      await _firebaseService.requestPasswordResetCode(email.toLowerCase());
 
       return AuthResult(
         success: true,
         message:
-            'Password reset email sent! Please check your inbox and follow the instructions.',
+            'If an account exists, a verification code has been sent to your email.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult(
+        success: false,
+        message: e.message ?? 'Failed to request verification code.',
       );
     } on firebase_auth.FirebaseAuthException catch (e) {
       return AuthResult(
@@ -459,6 +570,99 @@ class AuthService {
       return AuthResult(
         success: false,
         message: 'Failed to send reset email: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Verifies a one-time password reset code and returns a session token
+  Future<AuthResult> verifyPasswordResetCode({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      if (!_isValidEmail(email)) {
+        return AuthResult(
+          success: false,
+          message: 'Please enter a valid email address',
+        );
+      }
+      if (code.length != 6) {
+        return AuthResult(
+          success: false,
+          message: 'Please enter the 6-digit verification code.',
+        );
+      }
+
+      final response = await _firebaseService.verifyPasswordResetCode(
+        email.toLowerCase(),
+        code.trim(),
+      );
+
+      return AuthResult(
+        success: true,
+        token: response['resetSessionToken'] as String?,
+        message:
+            response['message'] as String? ?? 'Code verified successfully.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult(
+        success: false,
+        message: e.message ?? 'Verification failed. Please try again.',
+      );
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        message: 'Failed to verify code: ${e.toString()}',
+      );
+    }
+  }
+
+  /// Confirms password reset using a verified session token
+  Future<AuthResult> confirmPasswordResetWithCode({
+    required String email,
+    required String resetSessionToken,
+    required String newPassword,
+  }) async {
+    try {
+      if (!_isValidEmail(email)) {
+        return AuthResult(
+          success: false,
+          message: 'Please enter a valid email address',
+        );
+      }
+      if (newPassword.length < 6) {
+        return AuthResult(
+          success: false,
+          message: 'Password must be at least 6 characters long',
+        );
+      }
+      if (resetSessionToken.isEmpty) {
+        return AuthResult(
+          success: false,
+          message: 'Reset session expired. Please request a new code.',
+        );
+      }
+
+      final response = await _firebaseService.confirmPasswordResetWithCode(
+        email: email.toLowerCase(),
+        resetSessionToken: resetSessionToken,
+        newPassword: newPassword,
+      );
+
+      return AuthResult(
+        success: true,
+        message:
+            response['message'] as String? ?? 'Password updated successfully.',
+      );
+    } on FirebaseFunctionsException catch (e) {
+      return AuthResult(
+        success: false,
+        message: e.message ?? 'Unable to update password.',
+      );
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        message: 'Failed to update password: ${e.toString()}',
       );
     }
   }

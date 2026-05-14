@@ -46,3 +46,9 @@ app.*.map.json
 
 # Backend (optional; uncomment if you want to track backend separately)
 /backend/node_modules/
+
+# Firebase Functions local secrets (see functions/README.md)
+functions/.secret.local
+
+# Android release signing (never commit real key.properties)
+/android/key.properties

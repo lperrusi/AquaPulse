@@ -2,6 +2,7 @@
 ///
 /// Handles real-time weather data integration, location services, and weather-based hydration adjustments.
 /// Integrates with OpenWeatherMap API and device location services.
+library;
 
 import 'dart:convert';
 import 'dart:async';
@@ -10,7 +11,9 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../config/weather_config.dart';
+import 'firebase_service.dart';
 
 /// Weather data model for storing current weather information
 class WeatherData {
@@ -67,7 +70,6 @@ class WeatherData {
 
 /// Service class for weather data integration and location services
 class WeatherService {
-  static const String _apiKey = WeatherConfig.openWeatherApiKey;
   static const String _baseUrl = WeatherConfig.baseUrl;
   static const String _weatherCacheKey = 'weather_cache';
   static const String _lastUpdateKey = 'weather_last_update';
@@ -80,6 +82,13 @@ class WeatherService {
   StreamController<WeatherData>? _weatherStreamController;
   WeatherData? _lastWeatherData;
 
+  /// Proxy (signed-in) or dev fallback (`OPEN_WEATHER_API_KEY` compile-time define).
+  bool get _canFetchWeather {
+    final hasDirectKey = WeatherConfig.openWeatherApiKey.isNotEmpty;
+    final signedIn = FirebaseAuth.instance.currentUser != null;
+    return hasDirectKey || signedIn;
+  }
+
   /// Gets current weather data for the user's location
   Future<WeatherData?> getCurrentWeather() async {
     try {
@@ -89,53 +98,84 @@ class WeatherService {
         return cachedWeather;
       }
 
+      if (!_canFetchWeather) {
+        debugPrint(
+          'Weather fetch skipped: sign in for server proxy or set OPEN_WEATHER_API_KEY for direct API.',
+        );
+        return cachedWeather ?? _getDefaultWeatherData();
+      }
+
       // Get current location
       final position = await _getCurrentPosition();
-      if (position == null) return cachedWeather; // Return cached data if location unavailable
+      if (position == null) return cachedWeather;
 
-      // Check if API key is configured
-      if (_apiKey.isEmpty) {
-        debugPrint('Weather API key not configured. Weather features disabled.');
+      WeatherData? weatherData;
+
+      if (FirebaseAuth.instance.currentUser != null) {
+        try {
+          final map = await FirebaseService().getCurrentWeatherViaProxy(
+            lat: position.latitude,
+            lon: position.longitude,
+            units: WeatherConfig.units,
+          );
+          weatherData = WeatherData.fromJson(map);
+        } catch (e) {
+          debugPrint('Weather proxy failed: $e');
+        }
+      }
+
+      if (weatherData == null && WeatherConfig.openWeatherApiKey.isNotEmpty) {
+        weatherData = await _fetchOpenWeatherDirect(
+          position: position,
+          cachedWeather: cachedWeather,
+        );
+      }
+
+      if (weatherData == null) {
         return cachedWeather ?? _getDefaultWeatherData();
       }
 
-      // Get weather data from API
-      final response = await http.get(Uri.parse(
-        '$_baseUrl?lat=${position.latitude}&lon=${position.longitude}&appid=$_apiKey&units=${WeatherConfig.units}'
-      ));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final weatherData = WeatherData.fromJson(data);
-        
-        // Cache the new weather data
-        await _cacheWeatherData(weatherData);
-        
-        // Update stream if available
-        _lastWeatherData = weatherData;
-        _weatherStreamController?.add(weatherData);
-        
-        return weatherData;
-      } else if (response.statusCode == 401) {
-        debugPrint('Weather API error: 401 - Invalid API key. Please configure a valid OpenWeatherMap API key.');
-        return cachedWeather ?? _getDefaultWeatherData();
-      } else {
-        debugPrint('Weather API error: ${response.statusCode}');
-        return cachedWeather ?? _getDefaultWeatherData(); // Return cached data on API error
-      }
+      await _cacheWeatherData(weatherData);
+      _lastWeatherData = weatherData;
+      _weatherStreamController?.add(weatherData);
+      return weatherData;
     } catch (e) {
       debugPrint('Error getting weather data: $e');
-      return await _getCachedWeather(); // Return cached data on error
+      return await _getCachedWeather();
     }
+  }
+
+  Future<WeatherData?> _fetchOpenWeatherDirect({
+    required Position position,
+    required WeatherData? cachedWeather,
+  }) async {
+    final apiKey = WeatherConfig.openWeatherApiKey;
+    final response = await http.get(Uri.parse(
+      '$_baseUrl?lat=${position.latitude}&lon=${position.longitude}&appid=$apiKey&units=${WeatherConfig.units}',
+    ));
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return WeatherData.fromJson(data);
+    }
+    if (response.statusCode == 401) {
+      debugPrint(
+        'Weather API error: 401 - Invalid API key (direct). Check OPEN_WEATHER_API_KEY.',
+      );
+    } else {
+      debugPrint('Weather API error: ${response.statusCode}');
+    }
+    return null;
   }
 
   /// Starts background weather updates
   void startBackgroundUpdates({Duration interval = const Duration(minutes: 30)}) {
     _stopBackgroundUpdates(); // Stop any existing timer
     
-    // Don't start background updates if API key is not configured
-    if (_apiKey.isEmpty) {
-      debugPrint('Weather API key not configured. Background weather updates disabled.');
+    if (!_canFetchWeather) {
+      debugPrint(
+        'Weather background updates disabled: sign in or set OPEN_WEATHER_API_KEY.',
+      );
       return;
     }
     
@@ -271,11 +311,11 @@ class WeatherService {
     }
   }
 
-  /// Checks if weather data is recent (within last hour)
+  /// Checks if weather data is recent (within [WeatherConfig.cacheDurationMinutes]).
   bool isWeatherDataRecent(WeatherData weather) {
     final now = DateTime.now();
     final difference = now.difference(weather.timestamp);
-    return difference.inHours < 1;
+    return difference.inMinutes < WeatherConfig.cacheDurationMinutes;
   }
 
   /// Private method to check if weather data is recent

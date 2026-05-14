@@ -9,8 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hydration_tracker/screens/profile_screen.dart';
 import 'package:hydration_tracker/providers/app_providers.dart';
 import 'package:hydration_tracker/models/user.dart';
-import 'package:hydration_tracker/services/database_service.dart';
-import 'package:hydration_tracker/services/firebase_service.dart';
 import 'package:mockito/mockito.dart';
 import 'test_helpers.dart';
 import 'test_helpers.mocks.dart';
@@ -134,6 +132,49 @@ void main() {
         ),
         findsOneWidget,
         reason: 'Female button should stay selected (white text) after tap',
+      );
+    });
+
+    testWidgets('should show Male selected for legacy M value',
+        (WidgetTester tester) async {
+      final testUser = User(
+        id: 'test_user',
+        email: 'test@example.com',
+        name: 'Test User',
+        age: 30,
+        weight: 70.0,
+        gender: 'M',
+        activityLevel: ActivityLevel.moderatelyActive,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      when(mockDb.getCurrentUser()).thenAnswer((_) async => testUser);
+      when(mockDb.updateUser(any)).thenAnswer((_) async {});
+      when(mockDb.getAllWaterIntakesForUser(any)).thenAnswer((_) async => []);
+      when(mockDb.getWaterIntakeForDateAndUser(any, any))
+          .thenAnswer((_) async => []);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: ProfileScreen(),
+          ),
+        ),
+      );
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Text && w.data == 'Male' && w.style?.color == Colors.white,
+        ),
+        findsOneWidget,
+        reason: 'Legacy gender value M should render Male as selected',
       );
     });
 

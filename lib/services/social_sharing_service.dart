@@ -2,6 +2,7 @@
 ///
 /// Handles sharing achievements, stats, and milestones to social media platforms.
 /// Provides methods for creating shareable content and managing social interactions.
+library;
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
@@ -81,15 +82,15 @@ class SocialSharingService {
   String createStreakShareMessage(int streak, User user) {
     String message;
     if (streak >= 100) {
-      message = '🔥 ${user.name ?? 'I'} just reached a ${streak}-day hydration streak! Century champion!';
+      message = '🔥 ${user.name ?? 'I'} just reached a $streak-day hydration streak! Century champion!';
     } else if (streak >= 30) {
-      message = '🔥 ${user.name ?? 'I'} just reached a ${streak}-day hydration streak! Hydration master!';
+      message = '🔥 ${user.name ?? 'I'} just reached a $streak-day hydration streak! Hydration master!';
     } else if (streak >= 14) {
-      message = '🔥 ${user.name ?? 'I'} just reached a ${streak}-day hydration streak! Fortnight fighter!';
+      message = '🔥 ${user.name ?? 'I'} just reached a $streak-day hydration streak! Fortnight fighter!';
     } else if (streak >= 7) {
-      message = '🔥 ${user.name ?? 'I'} just reached a ${streak}-day hydration streak! Week warrior!';
+      message = '🔥 ${user.name ?? 'I'} just reached a $streak-day hydration streak! Week warrior!';
     } else {
-      message = '🔥 ${user.name ?? 'I'} just reached a ${streak}-day hydration streak! Getting started!';
+      message = '🔥 ${user.name ?? 'I'} just reached a $streak-day hydration streak! Getting started!';
     }
     
     return '$message\n\nDownload AquaPulse to build your own streak! #StayHydrated #AquaPulse';

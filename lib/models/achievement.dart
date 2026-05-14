@@ -2,6 +2,7 @@
 ///
 /// Defines achievement data for tracking user accomplishments and social sharing.
 /// Includes various types of achievements and their unlock conditions.
+library;
 
 enum AchievementType {
   streak,      // Streak-based achievements

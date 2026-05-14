@@ -2,6 +2,7 @@
 ///
 /// Handles friend relationships, friend requests, and social connections.
 /// Manages friend discovery, requests, and relationship status using Firebase.
+library;
 
 import 'package:flutter/foundation.dart';
 import '../models/friend.dart';

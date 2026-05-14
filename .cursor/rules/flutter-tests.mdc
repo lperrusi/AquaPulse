@@ -1,0 +1,23 @@
+---
+description: Test standards for reliability and meaningful coverage
+globs: "test/**"
+alwaysApply: false
+---
+
+# Flutter Test Standards
+
+- Prefer deterministic tests: avoid real time/network randomness unless explicitly mocked.
+- Verify user-visible outcomes and state transitions, not just implementation details.
+- Keep fixtures minimal and readable; centralize shared setup in helpers when repeated.
+- For bug fixes, add or update a regression test that fails before and passes after.
+- Avoid flaky patterns (`pumpAndSettle` without bounds, brittle text matching, implicit async waits).
+- Name tests by behavior (`given_when_then` or equivalent clear phrasing).
+- Keep test scope focused; use widget tests for UI behavior and unit tests for domain/service logic.
+
+## Quick Example
+
+```dart
+// GOOD: bounded settling to reduce hangs/flakes
+await tester.pump(const Duration(milliseconds: 100));
+await tester.pumpAndSettle(const Duration(seconds: 2));
+```

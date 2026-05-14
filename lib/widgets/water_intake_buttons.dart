@@ -2,6 +2,8 @@
 ///
 /// Displays quick-add buttons for logging water intake using customizable cup sizes.
 /// Allows users to manage cup sizes via a modal. Used on the dashboard for fast water logging.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';

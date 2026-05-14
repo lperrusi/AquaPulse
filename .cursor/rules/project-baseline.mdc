@@ -1,0 +1,19 @@
+---
+description: Global engineering baseline for AquaPulse
+alwaysApply: true
+---
+
+# AquaPulse Project Baseline
+
+- Keep changes focused and minimal; prefer reusing existing app patterns before introducing new abstractions.
+- Do not add broad file-level ignores (for example `ignore_for_file`) unless there is a documented, temporary reason.
+- Keep side effects out of build methods; run navigation, dialogs, and state writes from explicit handlers/listeners.
+- After an async gap, check `mounted` before `setState`, `Navigator`, or UI feedback calls.
+- Keep domain logic in providers/services and keep screens/widgets focused on presentation and user orchestration.
+- Reuse centralized style tokens (`NeumorphicStyle` and app theme) instead of ad-hoc colors, radii, and text styles.
+
+## Quick Checks Before Finishing
+
+- Errors are surfaced to users with a consistent UI pattern (not debug-only logs).
+- New UI code uses existing shared widgets/utilities when they already fit.
+- Dead or "old reference" code is removed instead of being kept in production paths.

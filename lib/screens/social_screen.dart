@@ -2,6 +2,8 @@
 ///
 /// Comprehensive social hub displaying friends, challenges, and leaderboards.
 /// Provides access to all social features including friend management, challenges, and competitive rankings.
+// ignore_for_file: use_build_context_synchronously, unused_local_variable
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,8 +12,8 @@ import '../models/friend.dart';
 import '../models/challenge.dart';
 import '../models/leaderboard.dart';
 import '../models/user.dart';
+import '../config/app_capabilities.dart';
 import '../utils/neumorphic_style.dart';
-
 
 /// The main SocialScreen widget for displaying social features
 class SocialScreen extends ConsumerStatefulWidget {
@@ -21,7 +23,8 @@ class SocialScreen extends ConsumerStatefulWidget {
   ConsumerState<SocialScreen> createState() => _SocialScreenState();
 }
 
-class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProviderStateMixin {
+class _SocialScreenState extends ConsumerState<SocialScreen>
+    with TickerProviderStateMixin {
   late TabController _tabController;
   int _selectedTabIndex = 0;
 
@@ -44,6 +47,72 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
 
   @override
   Widget build(BuildContext context) {
+    if (!AppCapabilities.cloudSocialEnabled) {
+      return Scaffold(
+        backgroundColor: NeumorphicStyle.backgroundBlue,
+        appBar: AppBar(
+          title: Text(
+            'Social',
+            style: NeumorphicStyle.neumorphicText(
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          centerTitle: true,
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: NeumorphicStyle.darkText,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: NeumorphicStyle.primaryBlue.withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.cloud_off,
+                    size: 48,
+                    color: NeumorphicStyle.primaryBlue,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Account features are temporarily disabled.',
+                    textAlign: TextAlign.center,
+                    style: NeumorphicStyle.neumorphicText(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Friends, challenges, and leaderboards will return when cloud mode is enabled.',
+                    textAlign: TextAlign.center,
+                    style: NeumorphicStyle.neumorphicText(
+                      fontSize: 14,
+                      color: NeumorphicStyle.lightText,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final friends = ref.watch(friendsProvider);
     final challenges = ref.watch(challengesProvider);
     final leaderboards = ref.watch(leaderboardsProvider);
@@ -116,7 +185,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
             ),
           ),
           const SizedBox(height: 16),
-          
+
           // Friends list
           Text(
             'Your Friends (${friends.length})',
@@ -125,7 +194,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
             ),
           ),
           const SizedBox(height: 8),
-          
+
           if (friends.isEmpty)
             Container(
               padding: const EdgeInsets.all(32),
@@ -163,7 +232,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     leading: CircleAvatar(
-                      child: Text(friend.friendName.substring(0, 1).toUpperCase()),
+                      child:
+                          Text(friend.friendName.substring(0, 1).toUpperCase()),
                     ),
                     title: Text(friend.friendName),
                     subtitle: Text(friend.friendEmail ?? ''),
@@ -196,7 +266,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                             children: [
                               Icon(Icons.person_remove, color: Colors.red),
                               SizedBox(width: 8),
-                              Text('Remove Friend', style: TextStyle(color: Colors.red)),
+                              Text('Remove Friend',
+                                  style: TextStyle(color: Colors.red)),
                             ],
                           ),
                         ),
@@ -213,8 +284,10 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
 
   Widget _buildChallengesTab(List<Challenge> challenges) {
     final theme = Theme.of(context);
-    final activeChallenges = challenges.where((c) => c.status == ChallengeStatus.active).toList();
-    final completedChallenges = challenges.where((c) => c.status == ChallengeStatus.completed).toList();
+    final activeChallenges =
+        challenges.where((c) => c.status == ChallengeStatus.active).toList();
+    final completedChallenges =
+        challenges.where((c) => c.status == ChallengeStatus.completed).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
@@ -229,7 +302,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
             ),
           ),
           const SizedBox(height: 8),
-          
+
           if (activeChallenges.isEmpty)
             Container(
               padding: const EdgeInsets.all(32),
@@ -273,7 +346,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                     title: Text(challenge.title),
                     subtitle: Text(challenge.description),
                     trailing: PopupMenuButton<String>(
-                      onSelected: (value) => _handleChallengeAction(value, challenge),
+                      onSelected: (value) =>
+                          _handleChallengeAction(value, challenge),
                       itemBuilder: (context) => [
                         const PopupMenuItem(
                           value: 'view_progress',
@@ -301,9 +375,9 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                 );
               },
             ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Completed challenges
           Text(
             'Completed Challenges (${completedChallenges.length})',
@@ -312,7 +386,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
             ),
           ),
           const SizedBox(height: 8),
-          
+
           if (completedChallenges.isNotEmpty)
             ListView.builder(
               shrinkWrap: true,
@@ -328,7 +402,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                       child: Icon(Icons.check, color: Colors.white),
                     ),
                     title: Text(challenge.title),
-                    subtitle: Text('Completed on ${challenge.endDate.toString().split(' ')[0]}'),
+                    subtitle: Text(
+                        'Completed on ${challenge.endDate.toString().split(' ')[0]}'),
                   ),
                 );
               },
@@ -354,9 +429,9 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
               Icons.public,
               const Color(0xFF2196F3),
             ),
-          
+
           const SizedBox(height: 16),
-          
+
           // Streak leaderboard
           if (leaderboards.containsKey('streak'))
             _buildLeaderboardCard(
@@ -365,9 +440,9 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
               Icons.local_fire_department,
               Colors.orange,
             ),
-          
+
           const SizedBox(height: 16),
-          
+
           // View all leaderboards button
           ElevatedButton.icon(
             onPressed: _showAllLeaderboards,
@@ -382,9 +457,10 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
     );
   }
 
-  Widget _buildLeaderboardCard(String title, Leaderboard leaderboard, IconData icon, Color color) {
+  Widget _buildLeaderboardCard(
+      String title, Leaderboard leaderboard, IconData icon, Color color) {
     final theme = Theme.of(context);
-    
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -409,7 +485,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
               ],
             ),
             const SizedBox(height: 12),
-            
+
             // Top 3 entries
             ...leaderboard.entries.take(3).map((entry) {
               return Padding(
@@ -539,28 +615,29 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              
+
               if (snapshot.hasError) {
                 return Center(
                   child: Text('Error loading requests: ${snapshot.error}'),
                 );
               }
-              
+
               final requests = snapshot.data ?? [];
-              
+
               if (requests.isEmpty) {
                 return const Center(
                   child: Text('No pending friend requests'),
                 );
               }
-              
+
               return ListView.builder(
                 itemCount: requests.length,
                 itemBuilder: (context, index) {
                   final request = requests[index];
                   return ListTile(
                     leading: CircleAvatar(
-                      child: Text(request.fromUserName.substring(0, 1).toUpperCase()),
+                      child: Text(
+                          request.fromUserName.substring(0, 1).toUpperCase()),
                     ),
                     title: Text(request.fromUserName),
                     subtitle: Text(request.message),
@@ -597,14 +674,14 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
     try {
       // Simulate loading friend requests - in a real app, this would call the backend
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       return [
         FriendRequest(
           id: 'request_1',
           fromUserId: 'user_1',
           fromUserName: 'John Doe',
           toUserId: 'current_user',
-                      message: 'Hi! I\'d like to be your friend on AquaPulse.',
+          message: 'Hi! I\'d like to be your friend on AquaPulse.',
           createdAt: DateTime.now().subtract(const Duration(hours: 2)),
         ),
         FriendRequest(
@@ -667,7 +744,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
     ChallengeType selectedType = ChallengeType.dailyGoal;
     DateTime startDate = DateTime.now();
     DateTime endDate = DateTime.now().add(const Duration(days: 7));
-    
+
     showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -697,7 +774,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                   ),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<ChallengeType>(
-                    value: selectedType,
+                    initialValue: selectedType,
                     decoration: const InputDecoration(
                       labelText: 'Challenge Type',
                       border: OutlineInputBorder(),
@@ -705,7 +782,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                     items: ChallengeType.values.map((type) {
                       return DropdownMenuItem(
                         value: type,
-                        child: Text(type.name.replaceAll('_', ' ').toUpperCase()),
+                        child:
+                            Text(type.name.replaceAll('_', ' ').toUpperCase()),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -724,7 +802,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                               context: context,
                               initialDate: startDate,
                               firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
                             );
                             if (date != null) {
                               setState(() {
@@ -732,7 +811,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                               });
                             }
                           },
-                          child: Text('Start: ${startDate.toString().split(' ')[0]}'),
+                          child: Text(
+                              'Start: ${startDate.toString().split(' ')[0]}'),
                         ),
                       ),
                       Expanded(
@@ -742,7 +822,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                               context: context,
                               initialDate: endDate,
                               firstDate: startDate,
-                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                              lastDate:
+                                  DateTime.now().add(const Duration(days: 365)),
                             );
                             if (date != null) {
                               setState(() {
@@ -750,7 +831,8 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                               });
                             }
                           },
-                          child: Text('End: ${endDate.toString().split(' ')[0]}'),
+                          child:
+                              Text('End: ${endDate.toString().split(' ')[0]}'),
                         ),
                       ),
                     ],
@@ -797,21 +879,23 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
       if (friendId != null) {
         participants.add(friendId);
       }
-      
-      final challenge = await ref.read(challengesProvider.notifier).createChallenge(
-        title: title,
-        description: description,
-        type: type,
-        startDate: startDate,
-        endDate: endDate,
-        rules: _getChallengeRules(type),
-        participants: participants,
-      );
-      
+
+      final challenge =
+          await ref.read(challengesProvider.notifier).createChallenge(
+                title: title,
+                description: description,
+                type: type,
+                startDate: startDate,
+                endDate: endDate,
+                rules: _getChallengeRules(type),
+                participants: participants,
+              );
+
       if (challenge != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Challenge "${challenge.title}" created successfully!'),
+            content:
+                Text('Challenge "${challenge.title}" created successfully!'),
             backgroundColor: Colors.green,
           ),
         );
@@ -893,7 +977,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
     try {
       // In a real app, this would call the backend to remove the friend
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       // For now, we'll just show a success message
       // In a real implementation, you would call the friend service
       ScaffoldMessenger.of(context).showSnackBar(
@@ -926,30 +1010,31 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              
+
               if (snapshot.hasError) {
                 return Center(
                   child: Text('Error loading leaderboards: ${snapshot.error}'),
                 );
               }
-              
+
               final leaderboards = snapshot.data ?? {};
-              
+
               if (leaderboards.isEmpty) {
                 return const Center(
                   child: Text('No leaderboards available'),
                 );
               }
-              
+
               return ListView.builder(
                 itemCount: leaderboards.length,
                 itemBuilder: (context, index) {
                   final key = leaderboards.keys.elementAt(index);
                   final leaderboard = leaderboards[key]!;
-                  
+
                   return ExpansionTile(
                     title: Text(key.toUpperCase()),
-                    subtitle: Text('${leaderboard.entries.length} participants'),
+                    subtitle:
+                        Text('${leaderboard.entries.length} participants'),
                     children: [
                       ...leaderboard.entries.take(10).map((entry) {
                         return ListTile(
@@ -957,13 +1042,18 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
                             child: Text('${entry.rank}'),
                           ),
                           title: Text(entry.userName),
-                          subtitle: Text('Score: ${entry.score.toStringAsFixed(1)}'),
-                          trailing: entry.rank <= 3 
-                            ? Icon(
-                                entry.rank == 1 ? Icons.emoji_events : Icons.star,
-                                color: entry.rank == 1 ? Colors.amber : Colors.grey,
-                              )
-                            : null,
+                          subtitle:
+                              Text('Score: ${entry.score.toStringAsFixed(1)}'),
+                          trailing: entry.rank <= 3
+                              ? Icon(
+                                  entry.rank == 1
+                                      ? Icons.emoji_events
+                                      : Icons.star,
+                                  color: entry.rank == 1
+                                      ? Colors.amber
+                                      : Colors.grey,
+                                )
+                              : null,
                         );
                       }),
                     ],
@@ -987,7 +1077,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
     try {
       // Simulate loading leaderboards - in a real app, this would call the backend
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       final globalEntries = [
         LeaderboardEntry(
           id: 'entry_1',
@@ -1023,7 +1113,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
           periodEnd: DateTime.now(),
         ),
       ];
-      
+
       final streakEntries = [
         LeaderboardEntry(
           id: 'streak_entry_1',
@@ -1048,7 +1138,7 @@ class _SocialScreenState extends ConsumerState<SocialScreen> with TickerProvider
           periodEnd: DateTime.now(),
         ),
       ];
-      
+
       return {
         'global': Leaderboard(
           id: 'global_1',
@@ -1138,7 +1228,8 @@ class _AddFriendsDialogState extends State<_AddFriendsDialog> {
                     final user = searchResults[index];
                     return ListTile(
                       leading: CircleAvatar(
-                        child: Text(user.name?.substring(0, 1).toUpperCase() ?? 'U'),
+                        child: Text(
+                            user.name?.substring(0, 1).toUpperCase() ?? 'U'),
                       ),
                       title: Text(user.name ?? 'Unknown User'),
                       subtitle: Text(user.email),
@@ -1171,7 +1262,7 @@ class _AddFriendsDialogState extends State<_AddFriendsDialog> {
     try {
       // Simulate search results - in a real app, this would call the backend
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       final mockResults = [
         User(
           id: 'user_1',
@@ -1191,10 +1282,11 @@ class _AddFriendsDialogState extends State<_AddFriendsDialog> {
           createdAt: DateTime.now(),
           updatedAt: DateTime.now(),
         ),
-      ].where((user) => 
-        user.email.toLowerCase().contains(query.toLowerCase()) ||
-        (user.name?.toLowerCase().contains(query.toLowerCase()) ?? false)
-      ).toList();
+      ]
+          .where((user) =>
+              user.email.toLowerCase().contains(query.toLowerCase()) ||
+              (user.name?.toLowerCase().contains(query.toLowerCase()) ?? false))
+          .toList();
 
       setState(() {
         searchResults = mockResults;
@@ -1214,7 +1306,7 @@ class _AddFriendsDialogState extends State<_AddFriendsDialog> {
     try {
       // In a real app, this would call the friend service
       await Future.delayed(const Duration(milliseconds: 500));
-      
+
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1231,4 +1323,4 @@ class _AddFriendsDialogState extends State<_AddFriendsDialog> {
       );
     }
   }
-} 
+}

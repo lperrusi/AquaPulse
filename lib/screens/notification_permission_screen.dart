@@ -2,6 +2,8 @@
 ///
 /// Screen to request notification permissions from the user.
 /// Matches Figma design exactly.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
 import '../utils/neumorphic_style.dart';

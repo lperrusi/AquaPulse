@@ -2,6 +2,7 @@
 ///
 /// Provides business logic for hydration goal calculation, progress tracking, streaks, and health tips.
 /// Centralizes all hydration-related algorithms and utilities for the app.
+library;
 
 import 'package:flutter/material.dart';
 import '../models/user.dart';

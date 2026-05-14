@@ -2,6 +2,7 @@
 ///
 /// Defines leaderboard and ranking models for competitive features.
 /// Handles different types of leaderboards, rankings, and competitive statistics.
+library;
 
 enum LeaderboardType {
   global,         // Global leaderboard

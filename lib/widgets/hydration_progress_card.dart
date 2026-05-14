@@ -2,11 +2,11 @@
 ///
 /// Displays the user's daily hydration progress as an animated circular progress bar with motivational text and lap transitions.
 /// Allows editing the daily hydration goal via a dialog. Used on the dashboard and profile screens.
-import 'dart:math';
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_field
+library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_providers.dart';
-import '../services/hydration_service.dart';
 import '../utils/neumorphic_style.dart';
 import 'water_wave_progress.dart';
 
@@ -439,7 +439,7 @@ class _HydrationProgressCardState extends ConsumerState<HydrationProgressCard> w
     final percentage = (currentIntake / goal) * 100;
     
     if (lap > 0) {
-      return 'Amazing! You\'ve exceeded your goal ${lap} time${lap > 1 ? 's' : ''}!';
+      return 'Amazing! You\'ve exceeded your goal $lap time${lap > 1 ? 's' : ''}!';
     } else if (percentage >= 90) {
       return 'Almost there! You\'re so close to your goal!';
     } else if (percentage >= 75) {

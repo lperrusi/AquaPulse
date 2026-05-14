@@ -2,8 +2,11 @@
 ///
 /// Allows users to view, add, edit, and delete hydration reminders. Integrates with local notifications and supports custom times and days.
 /// Uses Riverpod for state management.
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_element, unused_local_variable
+library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:uuid/uuid.dart';
@@ -12,7 +15,6 @@ import '../models/reminder.dart';
 import '../widgets/smart_notification_suggestions.dart';
 import '../widgets/add_reminder_dialog.dart';
 import '../utils/neumorphic_style.dart';
-
 
 /// The main RemindersScreen widget, which is a stateful consumer widget for managing hydration reminders.
 class RemindersScreen extends ConsumerStatefulWidget {
@@ -23,19 +25,23 @@ class RemindersScreen extends ConsumerStatefulWidget {
 }
 
 /// State class for RemindersScreen. Handles reminder CRUD operations, dialog management, and UI updates.
-class _RemindersScreenState extends ConsumerState<RemindersScreen> with AutomaticKeepAliveClientMixin {
+class _RemindersScreenState extends ConsumerState<RemindersScreen>
+    with AutomaticKeepAliveClientMixin {
   TimeOfDay _selectedTime = const TimeOfDay(hour: 9, minute: 0);
   final List<int> _selectedDays = [];
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _messageController = TextEditingController();
-  
+  final _customIntervalMinutesController = TextEditingController();
 
   int _selectedIntervalMinutes = 120; // Default: 2 hours
   TimeOfDay _startTime = const TimeOfDay(hour: 8, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 20, minute: 0);
   bool _intervalEnabled = false; // State for interval reminder toggle
-  bool _hasInitialized = false; // Track if we've initialized the state from reminders
+  bool _hasInitialized =
+      false; // Track if we've initialized the state from reminders
+  static const int _minIntervalMinutes = 15;
+  static const int _maxIntervalMinutes = 720;
 
   @override
   void initState() {
@@ -69,7 +75,29 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
   void dispose() {
     _titleController.dispose();
     _messageController.dispose();
+    _customIntervalMinutesController.dispose();
     super.dispose();
+  }
+
+  int? _resolveIntervalMinutesFromInput() {
+    final customValue = _customIntervalMinutesController.text.trim();
+    if (customValue.isEmpty) {
+      return _selectedIntervalMinutes;
+    }
+
+    final parsed = int.tryParse(customValue);
+    if (parsed == null) {
+      return null;
+    }
+    if (parsed < _minIntervalMinutes || parsed > _maxIntervalMinutes) {
+      return null;
+    }
+    return parsed;
+  }
+
+  bool _isValidIntervalMinutes(int intervalMinutes) {
+    return intervalMinutes >= _minIntervalMinutes &&
+        intervalMinutes <= _maxIntervalMinutes;
   }
 
   @override
@@ -80,7 +108,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     super.build(context); // Required for AutomaticKeepAliveClientMixin
     final reminders = ref.watch(remindersProvider);
     final remindersError = ref.watch(remindersErrorProvider);
-    
+
     // Don't auto-update the toggle state in build - it should only be set:
     // 1. On initial load (in initState)
     // 2. When user manually toggles it
@@ -119,7 +147,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                   ],
                 ),
               ),
-              
+
               // Content - matches Figma: px-6 space-y-6 max-w-2xl mx-auto
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24), // px-6
@@ -129,11 +157,11 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                     // Interval Reminders - matches Figma
                     _buildIntervalRemindersCard(_intervalEnabled),
                     const SizedBox(height: 24), // space-y-6 = 24px
-                    
+
                     // Quick Add - matches Figma
                     _buildQuickAddSection(),
                     const SizedBox(height: 24),
-                    
+
                     // My Reminders - matches Figma
                     _buildRemindersList(reminders),
                   ],
@@ -210,7 +238,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                     _intervalEnabled = value;
                   });
                 },
-                activeColor: NeumorphicStyle.primaryBlue,
+                activeThumbColor: NeumorphicStyle.primaryBlue,
               ),
             ],
           ),
@@ -382,12 +410,14 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                   final hour = int.parse(time[0]);
                   final minute = int.parse(time[1]);
                   final isPM = timeParts[1] == 'PM';
-                  
+
                   final timeOfDay = TimeOfDay(
-                    hour: isPM && hour != 12 ? hour + 12 : (hour == 12 && !isPM ? 0 : hour),
+                    hour: isPM && hour != 12
+                        ? hour + 12
+                        : (hour == 12 && !isPM ? 0 : hour),
                     minute: minute,
                   );
-                  
+
                   _addQuickReminder(
                     '$label Reminder',
                     'Time to drink water! 💧',
@@ -396,7 +426,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                 },
                 child: Container(
                   margin: EdgeInsets.only(
-                    right: button == quickAddButtons.last ? 0 : 12, // gap-3 = 12px
+                    right:
+                        button == quickAddButtons.last ? 0 : 12, // gap-3 = 12px
                   ),
                   padding: const EdgeInsets.all(16), // p-4 = 16px
                   decoration: BoxDecoration(
@@ -507,7 +538,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
         icon = Icons.notifications;
     }
 
-    final timeString = '${reminder.time.hour.toString().padLeft(2, '0')}:${reminder.time.minute.toString().padLeft(2, '0')} ${reminder.time.hour >= 12 ? 'PM' : 'AM'}';
+    final timeString =
+        '${reminder.time.hour.toString().padLeft(2, '0')}:${reminder.time.minute.toString().padLeft(2, '0')} ${reminder.time.hour >= 12 ? 'PM' : 'AM'}';
     final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     return Container(
@@ -530,12 +562,16 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: reminder.isActive ? NeumorphicStyle.lightBlue : NeumorphicStyle.surfaceBlue,
+              color: reminder.isActive
+                  ? NeumorphicStyle.lightBlue
+                  : NeumorphicStyle.surfaceBlue,
               shape: BoxShape.circle,
             ),
             child: Icon(
               icon,
-              color: reminder.isActive ? NeumorphicStyle.primaryBlue : NeumorphicStyle.lightText,
+              color: reminder.isActive
+                  ? NeumorphicStyle.primaryBlue
+                  : NeumorphicStyle.lightText,
               size: 20,
             ),
           ),
@@ -567,9 +603,12 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                     // Reminder uses 1-based days (1=Monday), dayNames is 0-based
                     final dayName = dayNames[dayIndex - 1];
                     return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: reminder.isActive ? NeumorphicStyle.lightBlue : NeumorphicStyle.surfaceBlue,
+                        color: reminder.isActive
+                            ? NeumorphicStyle.lightBlue
+                            : NeumorphicStyle.surfaceBlue,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -577,7 +616,9 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
-                          color: reminder.isActive ? NeumorphicStyle.primaryBlue : NeumorphicStyle.lightText,
+                          color: reminder.isActive
+                              ? NeumorphicStyle.primaryBlue
+                              : NeumorphicStyle.lightText,
                         ),
                       ),
                     );
@@ -592,9 +633,11 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                 value: reminder.isActive,
                 onChanged: (value) async {
                   final updatedReminder = reminder.copyWith(isActive: value);
-                  await ref.read(remindersProvider.notifier).updateReminder(updatedReminder);
+                  await ref
+                      .read(remindersProvider.notifier)
+                      .updateReminder(updatedReminder);
                 },
-                activeColor: NeumorphicStyle.primaryBlue,
+                activeThumbColor: NeumorphicStyle.primaryBlue,
               ),
               const SizedBox(height: 8),
               Row(
@@ -606,9 +649,11 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                         context: context,
                         isScrollControlled: true,
                         shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(24)),
                         ),
-                        builder: (context) => EditReminderForm(reminder: reminder),
+                        builder: (context) =>
+                            EditReminderForm(reminder: reminder),
                       );
                     },
                     icon: Icon(
@@ -626,7 +671,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                         context: context,
                         builder: (context) => AlertDialog(
                           title: const Text('Delete Reminder'),
-                          content: Text('Are you sure you want to delete "${reminder.title}"?'),
+                          content: Text(
+                              'Are you sure you want to delete "${reminder.title}"?'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(context),
@@ -634,11 +680,14 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                             ),
                             TextButton(
                               onPressed: () async {
-                                await ref.read(remindersProvider.notifier).deleteReminder(reminder.id);
+                                await ref
+                                    .read(remindersProvider.notifier)
+                                    .deleteReminder(reminder.id);
                                 Navigator.pop(context);
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Reminder deleted')),
+                                    const SnackBar(
+                                        content: Text('Reminder deleted')),
                                   );
                                 }
                               },
@@ -777,7 +826,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                   icon: Icons.hourglass_empty,
                   label: 'Every Hour',
                   interval: '60 min',
-                  onTap: () => _addIntervalReminder('Hourly Hydration', 'Time for a water break! 💧', 60),
+                  onTap: () => _addIntervalReminder(
+                      'Hourly Hydration', 'Time for a water break! 💧', 60),
                 ),
               ),
               const SizedBox(width: 12),
@@ -787,7 +837,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                   icon: Icons.timer,
                   label: 'Every 2 Hours',
                   interval: '120 min',
-                  onTap: () => _addIntervalReminder('2-Hour Hydration', 'Stay hydrated! Drink water! 🥤', 120),
+                  onTap: () => _addIntervalReminder('2-Hour Hydration',
+                      'Stay hydrated! Drink water! 🥤', 120),
                 ),
               ),
               const SizedBox(width: 12),
@@ -797,6 +848,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                   icon: Icons.access_time,
                   label: 'Custom',
                   interval: 'Custom',
+                  buttonKey: const Key('open_custom_interval_dialog_button'),
                   onTap: () => _showIntervalReminderDialog(context),
                 ),
               ),
@@ -809,6 +861,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
 
   Widget _buildIntervalButton(
     BuildContext context, {
+    Key? buttonKey,
     required IconData icon,
     required String label,
     required String interval,
@@ -817,6 +870,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        key: buttonKey,
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
@@ -885,7 +939,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     );
   }
 
-  Widget _buildActionButtonsSection(BuildContext context, List<Reminder> reminders) {
+  Widget _buildActionButtonsSection(
+      BuildContext context, List<Reminder> reminders) {
     return Column(
       children: [
         // Smart Suggestions Button
@@ -919,7 +974,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
               onTap: () => _showSmartSuggestionsDialog(context),
               borderRadius: BorderRadius.circular(18),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -954,9 +1010,9 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
             ),
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         // Your Reminders Button
         Container(
           width: double.infinity,
@@ -988,7 +1044,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
               onTap: () => _showYourRemindersDialog(context, reminders),
               borderRadius: BorderRadius.circular(18),
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -1068,15 +1125,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     );
   }
 
-
-
-
-
-
-
-
-
-  Future<void> _addQuickReminder(String title, String message, TimeOfDay time) async {
+  Future<void> _addQuickReminder(
+      String title, String message, TimeOfDay time) async {
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
@@ -1092,7 +1142,7 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     );
 
     await ref.read(remindersProvider.notifier).addReminder(reminder);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1103,7 +1153,21 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     }
   }
 
-  Future<void> _addIntervalReminder(String title, String message, int intervalMinutes) async {
+  Future<void> _addIntervalReminder(
+      String title, String message, int intervalMinutes) async {
+    if (!_isValidIntervalMinutes(intervalMinutes)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Interval must be between $_minIntervalMinutes and $_maxIntervalMinutes minutes.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
@@ -1121,8 +1185,20 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       endTime: _endTime,
     );
 
-    await ref.read(remindersProvider.notifier).addReminder(reminder);
-    
+    try {
+      await ref.read(remindersProvider.notifier).addReminder(reminder);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add interval reminder: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1134,11 +1210,13 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
   }
 
   void _showIntervalReminderDialog(BuildContext context) {
+    _customIntervalMinutesController.clear();
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
@@ -1188,7 +1266,9 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
             endTime: reminder.endTime,
           );
 
-          await ref.read(remindersProvider.notifier).addReminder(reminderWithUserId);
+          await ref
+              .read(remindersProvider.notifier)
+              .addReminder(reminderWithUserId);
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1208,7 +1288,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
@@ -1295,7 +1376,9 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      reminder == null ? 'Create a custom hydration reminder' : 'Update your reminder settings',
+                      reminder == null
+                          ? 'Create a custom hydration reminder'
+                          : 'Update your reminder settings',
                       style: NeumorphicStyle.neumorphicText(
                         fontSize: 14,
                         color: NeumorphicStyle.lightText,
@@ -1320,90 +1403,90 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                       key: _formKey,
                       child: Column(
                         children: [
-                    TextFormField(
-                      controller: _titleController,
-                      decoration: InputDecoration(
-                        labelText: 'Title',
-                        labelStyle: NeumorphicStyle.neumorphicText(
-                          fontSize: 14,
-                          color: NeumorphicStyle.lightText,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.softBorder,
+                          TextFormField(
+                            controller: _titleController,
+                            decoration: InputDecoration(
+                              labelText: 'Title',
+                              labelStyle: NeumorphicStyle.neumorphicText(
+                                fontSize: 14,
+                                color: NeumorphicStyle.lightText,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.softBorder,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.softBorder,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.primaryBlue,
+                                  width: 2,
+                                ),
+                              ),
+                              filled: true,
+                              fillColor: NeumorphicStyle.surfaceBlue,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                            ),
+                            style: NeumorphicStyle.neumorphicText(
+                              fontSize: 16,
+                              color: NeumorphicStyle.darkText,
+                            ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter a title';
+                              }
+                              return null;
+                            },
                           ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.softBorder,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.primaryBlue,
-                            width: 2,
-                          ),
-                        ),
-                        filled: true,
-                        fillColor: NeumorphicStyle.surfaceBlue,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
-                      ),
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 16,
-                        color: NeumorphicStyle.darkText,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Please enter a title';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _messageController,
-                      decoration: InputDecoration(
-                        labelText: 'Message',
-                        labelStyle: NeumorphicStyle.neumorphicText(
-                          fontSize: 14,
-                          color: NeumorphicStyle.lightText,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.softBorder,
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.softBorder,
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide(
-                            color: NeumorphicStyle.primaryBlue,
-                            width: 2,
-                          ),
-                        ),
-                        filled: true,
-                        fillColor: NeumorphicStyle.surfaceBlue,
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
-                      ),
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 16,
-                        color: NeumorphicStyle.darkText,
-                      ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _messageController,
+                            decoration: InputDecoration(
+                              labelText: 'Message',
+                              labelStyle: NeumorphicStyle.neumorphicText(
+                                fontSize: 14,
+                                color: NeumorphicStyle.lightText,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.softBorder,
+                                ),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.softBorder,
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(
+                                  color: NeumorphicStyle.primaryBlue,
+                                  width: 2,
+                                ),
+                              ),
+                              filled: true,
+                              fillColor: NeumorphicStyle.surfaceBlue,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 16,
+                              ),
+                            ),
+                            style: NeumorphicStyle.neumorphicText(
+                              fontSize: 16,
+                              color: NeumorphicStyle.darkText,
+                            ),
                             maxLines: 2,
                           ),
                           const SizedBox(height: 16),
@@ -1434,7 +1517,10 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
+                                    colors: [
+                                      Color(0xFF4FC3F7),
+                                      Color(0xFF2196F3)
+                                    ],
                                   ),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -1468,7 +1554,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                                       color: NeumorphicStyle.softBorder,
                                       width: 1.5,
                                     ),
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(16),
                                     ),
@@ -1488,14 +1575,18 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                                 child: Container(
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
-                                      colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
+                                      colors: [
+                                        Color(0xFF4FC3F7),
+                                        Color(0xFF2196F3)
+                                      ],
                                       begin: Alignment.centerLeft,
                                       end: Alignment.centerRight,
                                     ),
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: const Color(0xFF2196F3).withOpacity(0.3),
+                                        color: const Color(0xFF2196F3)
+                                            .withOpacity(0.3),
                                         blurRadius: 12,
                                         offset: const Offset(0, 4),
                                       ),
@@ -1506,7 +1597,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.transparent,
                                       shadowColor: Colors.transparent,
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 16),
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(16),
                                       ),
@@ -1723,249 +1815,318 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
                               ),
                               const SizedBox(height: 12),
                               DropdownButtonFormField<int>(
-                          value: _selectedIntervalMinutes,
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: NeumorphicStyle.softBorder,
-                              ),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: NeumorphicStyle.softBorder,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: NeumorphicStyle.primaryBlue,
-                                width: 2,
-                              ),
-                            ),
-                            filled: true,
-                            fillColor: NeumorphicStyle.surfaceBlue,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                          ),
-                          style: NeumorphicStyle.neumorphicText(
-                            fontSize: 16,
-                            color: NeumorphicStyle.darkText,
-                          ),
-                          dropdownColor: NeumorphicStyle.surfaceBlue,
-                          items: [
-                            DropdownMenuItem(value: 30, child: Text('Every 30 minutes')),
-                            DropdownMenuItem(value: 60, child: Text('Every hour')),
-                            DropdownMenuItem(value: 90, child: Text('Every 1.5 hours')),
-                            DropdownMenuItem(value: 120, child: Text('Every 2 hours')),
-                            DropdownMenuItem(value: 180, child: Text('Every 3 hours')),
-                            DropdownMenuItem(value: 240, child: Text('Every 4 hours')),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedIntervalMinutes = value!;
-                            });
-                          },
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-                        // Time Range
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Start Time',
-                                    style: NeumorphicStyle.neumorphicText(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: NeumorphicStyle.darkText,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: NeumorphicStyle.surfaceBlue,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: NeumorphicStyle.softBorder,
-                                      ),
-                                    ),
-                                    child: ListTile(
-                                      title: Text(
-                                        _startTime.format(context),
-                                        style: NeumorphicStyle.neumorphicText(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      trailing: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          gradient: const LinearGradient(
-                                            colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                                          ),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(
-                                          Icons.access_time,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      onTap: () async {
-                                        final time = await showTimePicker(
-                                          context: context,
-                                          initialTime: _startTime,
-                                        );
-                                        if (time != null) {
-                                          setState(() => _startTime = time);
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'End Time',
-                                    style: NeumorphicStyle.neumorphicText(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: NeumorphicStyle.darkText,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: NeumorphicStyle.surfaceBlue,
-                                      borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(
-                                        color: NeumorphicStyle.softBorder,
-                                      ),
-                                    ),
-                                    child: ListTile(
-                                      title: Text(
-                                        _endTime.format(context),
-                                        style: NeumorphicStyle.neumorphicText(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      trailing: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          gradient: const LinearGradient(
-                                            colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                                          ),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(
-                                          Icons.access_time,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      onTap: () async {
-                                        final time = await showTimePicker(
-                                          context: context,
-                                          initialTime: _endTime,
-                                        );
-                                        if (time != null) {
-                                          setState(() => _endTime = time);
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.pop(context),
-                                style: OutlinedButton.styleFrom(
-                                  side: BorderSide(
-                                    color: NeumorphicStyle.softBorder,
-                                    width: 1.5,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
-                                  shape: RoundedRectangleBorder(
+                                initialValue: _selectedIntervalMinutes,
+                                decoration: InputDecoration(
+                                  border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.softBorder,
+                                    ),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.softBorder,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.primaryBlue,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  filled: true,
+                                  fillColor: NeumorphicStyle.surfaceBlue,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 16,
                                   ),
                                 ),
-                                child: Text(
-                                  'Cancel',
-                                  style: NeumorphicStyle.neumorphicText(
-                                    fontSize: 16,
-                                    color: NeumorphicStyle.lightText,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                style: NeumorphicStyle.neumorphicText(
+                                  fontSize: 16,
+                                  color: NeumorphicStyle.darkText,
                                 ),
+                                dropdownColor: NeumorphicStyle.surfaceBlue,
+                                items: [
+                                  DropdownMenuItem(
+                                      value: 30,
+                                      child: Text('Every 30 minutes')),
+                                  DropdownMenuItem(
+                                      value: 60, child: Text('Every hour')),
+                                  DropdownMenuItem(
+                                      value: 90,
+                                      child: Text('Every 1.5 hours')),
+                                  DropdownMenuItem(
+                                      value: 120, child: Text('Every 2 hours')),
+                                  DropdownMenuItem(
+                                      value: 180, child: Text('Every 3 hours')),
+                                  DropdownMenuItem(
+                                      value: 240, child: Text('Every 4 hours')),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _selectedIntervalMinutes = value!;
+                                  });
+                                },
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                                    begin: Alignment.centerLeft,
-                                    end: Alignment.centerRight,
+                              const SizedBox(height: 12),
+                              TextFormField(
+                                key: const Key('custom_interval_minutes_field'),
+                                controller: _customIntervalMinutesController,
+                                keyboardType: TextInputType.number,
+                                inputFormatters: <TextInputFormatter>[
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                                decoration: InputDecoration(
+                                  labelText: 'Custom interval (minutes)',
+                                  hintText:
+                                      'Optional: $_minIntervalMinutes - $_maxIntervalMinutes',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.softBorder,
+                                    ),
                                   ),
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(0xFF2196F3).withOpacity(0.3),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 4),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.softBorder,
+                                    ),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(
+                                      color: NeumorphicStyle.primaryBlue,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  filled: true,
+                                  fillColor: NeumorphicStyle.surfaceBlue,
+                                ),
+                                validator: (value) {
+                                  final trimmed = (value ?? '').trim();
+                                  if (trimmed.isEmpty) {
+                                    return null;
+                                  }
+                                  final parsed = int.tryParse(trimmed);
+                                  if (parsed == null ||
+                                      !_isValidIntervalMinutes(parsed)) {
+                                    return 'Use $_minIntervalMinutes-$_maxIntervalMinutes minutes';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          // Time Range
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Start Time',
+                                      style: NeumorphicStyle.neumorphicText(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: NeumorphicStyle.darkText,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: NeumorphicStyle.surfaceBlue,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: NeumorphicStyle.softBorder,
+                                        ),
+                                      ),
+                                      child: ListTile(
+                                        title: Text(
+                                          _startTime.format(context),
+                                          style: NeumorphicStyle.neumorphicText(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        trailing: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [
+                                                Color(0xFF4FC3F7),
+                                                Color(0xFF2196F3)
+                                              ],
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(
+                                            Icons.access_time,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        onTap: () async {
+                                          final time = await showTimePicker(
+                                            context: context,
+                                            initialTime: _startTime,
+                                          );
+                                          if (time != null) {
+                                            setState(() => _startTime = time);
+                                          }
+                                        },
+                                      ),
                                     ),
                                   ],
                                 ),
-                                child: ElevatedButton(
-                                  onPressed: () => _saveIntervalReminder(),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.transparent,
-                                    shadowColor: Colors.transparent,
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'End Time',
+                                      style: NeumorphicStyle.neumorphicText(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: NeumorphicStyle.darkText,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: NeumorphicStyle.surfaceBlue,
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: NeumorphicStyle.softBorder,
+                                        ),
+                                      ),
+                                      child: ListTile(
+                                        title: Text(
+                                          _endTime.format(context),
+                                          style: NeumorphicStyle.neumorphicText(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        trailing: Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            gradient: const LinearGradient(
+                                              colors: [
+                                                Color(0xFF4FC3F7),
+                                                Color(0xFF2196F3)
+                                              ],
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(
+                                            Icons.access_time,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        onTap: () async {
+                                          final time = await showTimePicker(
+                                            context: context,
+                                            initialTime: _endTime,
+                                          );
+                                          if (time != null) {
+                                            setState(() => _endTime = time);
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  style: OutlinedButton.styleFrom(
+                                    side: BorderSide(
+                                      color: NeumorphicStyle.softBorder,
+                                      width: 1.5,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16),
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
-                                  child: const Text(
-                                    'Add',
-                                    style: TextStyle(
+                                  child: Text(
+                                    'Cancel',
+                                    style: NeumorphicStyle.neumorphicText(
                                       fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
+                                      color: NeumorphicStyle.lightText,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [
+                                        Color(0xFF4FC3F7),
+                                        Color(0xFF2196F3)
+                                      ],
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF2196F3)
+                                            .withOpacity(0.3),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ElevatedButton(
+                                    onPressed: () => _saveIntervalReminder(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 16),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Add',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             ],
           ),
         );
@@ -2037,6 +2198,20 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
+    final resolvedInterval = _resolveIntervalMinutesFromInput();
+    if (resolvedInterval == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Please provide a valid interval between $_minIntervalMinutes and $_maxIntervalMinutes minutes.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     final newReminder = Reminder(
       id: const Uuid().v4(),
       userId: user.id,
@@ -2046,14 +2221,26 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       daysOfWeek: [1, 2, 3, 4, 5, 6, 7], // Daily for interval reminders
       isActive: true,
       isInterval: true,
-      intervalMinutes: _selectedIntervalMinutes,
+      intervalMinutes: resolvedInterval,
       startTime: _startTime,
       endTime: _endTime,
     );
 
-    await ref.read(remindersProvider.notifier).addReminder(newReminder);
+    try {
+      await ref.read(remindersProvider.notifier).addReminder(newReminder);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add interval reminder: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
     Navigator.pop(context);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2087,18 +2274,31 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       isInterval: false,
     );
 
-    if (reminder == null) {
-      await ref.read(remindersProvider.notifier).addReminder(newReminder);
-    } else {
-      await ref.read(remindersProvider.notifier).updateReminder(newReminder);
+    try {
+      if (reminder == null) {
+        await ref.read(remindersProvider.notifier).addReminder(newReminder);
+      } else {
+        await ref.read(remindersProvider.notifier).updateReminder(newReminder);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save reminder: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
     }
 
     Navigator.pop(context);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(reminder == null ? 'Reminder added!' : 'Reminder updated!'),
+          content:
+              Text(reminder == null ? 'Reminder added!' : 'Reminder updated!'),
           backgroundColor: Colors.green,
         ),
       );
@@ -2110,7 +2310,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
@@ -2251,7 +2452,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     );
   }
 
-  void _showYourRemindersDialog(BuildContext context, List<Reminder> reminders) {
+  void _showYourRemindersDialog(
+      BuildContext context, List<Reminder> reminders) {
     showDialog(
       context: context,
       builder: (context) => const RemindersDialog(),
@@ -2259,18 +2461,21 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
   }
 
   String _formatTimeOfDay(TimeOfDay time) {
-    final hour = time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
+    final hour =
+        time.hour == 0 ? 12 : (time.hour > 12 ? time.hour - 12 : time.hour);
     final minute = time.minute.toString().padLeft(2, '0');
     final period = time.hour < 12 ? 'AM' : 'PM';
     return '$hour:$minute $period';
   }
 
-  Future<void> _toggleReminder(WidgetRef ref, Reminder reminder, bool isActive) async {
+  Future<void> _toggleReminder(
+      WidgetRef ref, Reminder reminder, bool isActive) async {
     final updatedReminder = reminder.copyWith(isActive: isActive);
     await ref.read(remindersProvider.notifier).updateReminder(updatedReminder);
   }
 
-  void _showEditReminderDialog(BuildContext context, WidgetRef ref, Reminder reminder) {
+  void _showEditReminderDialog(
+      BuildContext context, WidgetRef ref, Reminder reminder) {
     // Show the edit dialog
     showModalBottomSheet(
       context: context,
@@ -2282,7 +2487,8 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
     );
   }
 
-  void _showDeleteReminderDialog(BuildContext context, WidgetRef ref, Reminder reminder) {
+  void _showDeleteReminderDialog(
+      BuildContext context, WidgetRef ref, Reminder reminder) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2295,7 +2501,9 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
           ),
           TextButton(
             onPressed: () async {
-              await ref.read(remindersProvider.notifier).deleteReminder(reminder.id);
+              await ref
+                  .read(remindersProvider.notifier)
+                  .deleteReminder(reminder.id);
               Navigator.pop(context); // Close delete dialog
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2309,13 +2517,12 @@ class _RemindersScreenState extends ConsumerState<RemindersScreen> with Automati
       ),
     );
   }
-
 }
 
 /// A ConsumerWidget for editing reminders
 class EditReminderForm extends ConsumerStatefulWidget {
   final Reminder reminder;
-  
+
   const EditReminderForm({super.key, required this.reminder});
 
   @override
@@ -2361,8 +2568,8 @@ class _EditReminderFormState extends ConsumerState<EditReminderForm> {
           Text(
             'Edit Reminder',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.bold,
-            ),
+                  fontWeight: FontWeight.bold,
+                ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
@@ -2443,8 +2650,8 @@ class _EditReminderFormState extends ConsumerState<EditReminderForm> {
         Text(
           'Days',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-          ),
+                fontWeight: FontWeight.w600,
+              ),
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -2492,7 +2699,7 @@ class _EditReminderFormState extends ConsumerState<EditReminderForm> {
 
     await ref.read(remindersProvider.notifier).updateReminder(updatedReminder);
     Navigator.pop(context);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2508,12 +2715,14 @@ class _EditReminderFormState extends ConsumerState<EditReminderForm> {
 class RemindersDialog extends ConsumerWidget {
   const RemindersDialog({super.key});
 
-  static Future<void> _toggleReminder(WidgetRef ref, Reminder reminder, bool isActive) async {
+  static Future<void> _toggleReminder(
+      WidgetRef ref, Reminder reminder, bool isActive) async {
     final updatedReminder = reminder.copyWith(isActive: isActive);
     await ref.read(remindersProvider.notifier).updateReminder(updatedReminder);
   }
 
-  static void _showEditReminderDialog(BuildContext context, WidgetRef ref, Reminder reminder) {
+  static void _showEditReminderDialog(
+      BuildContext context, WidgetRef ref, Reminder reminder) {
     // Show the edit dialog
     showModalBottomSheet(
       context: context,
@@ -2525,7 +2734,8 @@ class RemindersDialog extends ConsumerWidget {
     );
   }
 
-  static void _showDeleteReminderDialog(BuildContext context, WidgetRef ref, Reminder reminder) {
+  static void _showDeleteReminderDialog(
+      BuildContext context, WidgetRef ref, Reminder reminder) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -2538,7 +2748,9 @@ class RemindersDialog extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              await ref.read(remindersProvider.notifier).deleteReminder(reminder.id);
+              await ref
+                  .read(remindersProvider.notifier)
+                  .deleteReminder(reminder.id);
               Navigator.pop(context); // Close delete dialog
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2556,9 +2768,10 @@ class RemindersDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reminders = ref.watch(remindersProvider);
-    
+
     return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+      insetPadding:
+          const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(28),
       ),
@@ -2687,9 +2900,10 @@ class RemindersDialog extends ConsumerWidget {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
-                    children: reminders.map((reminder) => 
-                      _buildReminderCardForDialog(context, ref, reminder)
-                    ).toList(),
+                    children: reminders
+                        .map((reminder) =>
+                            _buildReminderCardForDialog(context, ref, reminder))
+                        .toList(),
                   ),
                 ),
               ),
@@ -2739,10 +2953,11 @@ class RemindersDialog extends ConsumerWidget {
     );
   }
 
-  Widget _buildReminderCardForDialog(BuildContext context, WidgetRef ref, Reminder reminder) {
+  Widget _buildReminderCardForDialog(
+      BuildContext context, WidgetRef ref, Reminder reminder) {
     final theme = Theme.of(context);
     final time = reminder.time;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -2764,14 +2979,17 @@ class RemindersDialog extends ConsumerWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: reminder.isActive 
+                    color: reminder.isActive
                         ? theme.colorScheme.primary.withValues(alpha: 0.1)
-                        : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.1),
+                        : theme.colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    reminder.isActive ? Icons.notifications_active : Icons.notifications_off,
-                    color: reminder.isActive 
+                    reminder.isActive
+                        ? Icons.notifications_active
+                        : Icons.notifications_off,
+                    color: reminder.isActive
                         ? theme.colorScheme.primary
                         : theme.colorScheme.onSurfaceVariant,
                     size: 20,
@@ -2788,13 +3006,14 @@ class RemindersDialog extends ConsumerWidget {
                 ),
                 Switch(
                   value: reminder.isActive,
-                  onChanged: (value) => RemindersDialog._toggleReminder(ref, reminder, value),
+                  onChanged: (value) =>
+                      RemindersDialog._toggleReminder(ref, reminder, value),
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 8),
-            
+
             // Message
             if (reminder.message.isNotEmpty) ...[
               Text(
@@ -2805,7 +3024,7 @@ class RemindersDialog extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
             ],
-            
+
             // Time and days info
             Row(
               children: [
@@ -2816,7 +3035,7 @@ class RemindersDialog extends ConsumerWidget {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  reminder.isInterval 
+                  reminder.isInterval
                       ? 'Every ${_formatInterval(reminder.intervalMinutes!)}'
                       : '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -2832,7 +3051,7 @@ class RemindersDialog extends ConsumerWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    reminder.isInterval 
+                    reminder.isInterval
                         ? '${reminder.startTime?.format(context)} - ${reminder.endTime?.format(context)}'
                         : _formatDays(reminder.daysOfWeek),
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -2842,28 +3061,32 @@ class RemindersDialog extends ConsumerWidget {
                 ),
               ],
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             // Action buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
-                  onPressed: () => RemindersDialog._showEditReminderDialog(context, ref, reminder),
+                  onPressed: () => RemindersDialog._showEditReminderDialog(
+                      context, ref, reminder),
                   icon: const Icon(Icons.edit, size: 16),
                   label: const Text('Edit'),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                 ),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: () => RemindersDialog._showDeleteReminderDialog(context, ref, reminder),
+                  onPressed: () => RemindersDialog._showDeleteReminderDialog(
+                      context, ref, reminder),
                   icon: const Icon(Icons.delete, size: 16),
                   label: const Text('Delete'),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     foregroundColor: theme.colorScheme.error,
                   ),
                 ),
@@ -2876,17 +3099,24 @@ class RemindersDialog extends ConsumerWidget {
   }
 
   String _formatDays(List<int> daysOfWeek) {
-    if (daysOfWeek.length == 7) return 'Daily';
-    if (daysOfWeek.length == 5 && daysOfWeek.every((d) => [1, 2, 3, 4, 5].contains(d))) return 'Weekdays';
-    if (daysOfWeek.length == 2 && daysOfWeek.every((d) => [6, 7].contains(d))) return 'Weekends';
-    
+    if (daysOfWeek.length == 7) {
+      return 'Daily';
+    }
+    if (daysOfWeek.length == 5 &&
+        daysOfWeek.every((d) => [1, 2, 3, 4, 5].contains(d))) {
+      return 'Weekdays';
+    }
+    if (daysOfWeek.length == 2 && daysOfWeek.every((d) => [6, 7].contains(d))) {
+      return 'Weekends';
+    }
+
     final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return daysOfWeek.map((d) => dayNames[d - 1]).join(', ');
   }
 
   String _formatInterval(int minutes) {
     if (minutes < 60) {
-      return '${minutes} minutes';
+      return '$minutes minutes';
     } else if (minutes == 60) {
       return 'hour';
     } else if (minutes < 120) {
@@ -2897,5 +3127,4 @@ class RemindersDialog extends ConsumerWidget {
       return '${hours.toInt()} hours';
     }
   }
-
-} 
+}

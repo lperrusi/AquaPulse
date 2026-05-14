@@ -2,6 +2,8 @@
 ///
 /// A custom progress indicator that shows a realistic water-like wave animation.
 /// Used to visualize hydration progress in a more engaging way with advanced visual effects.
+// ignore_for_file: deprecated_member_use, unused_field
+library;
 
 import 'dart:math';
 import 'dart:ui' as ui;
@@ -15,13 +17,13 @@ class WaterWaveProgress extends StatefulWidget {
   final double size;
 
   const WaterWaveProgress({
-    Key? key,
+    super.key,
     required this.value,
     required this.color,
     required this.backgroundColor,
     this.strokeWidth = 12.0,
     this.size = 140.0,
-  }) : super(key: key);
+  });
 
   @override
   State<WaterWaveProgress> createState() => _WaterWaveProgressState();
@@ -120,7 +122,7 @@ class _WaterWaveProgressState extends State<WaterWaveProgress> with TickerProvid
     return AnimatedBuilder(
       animation: _animationController,
       builder: (context, child) {
-        return Container(
+        return SizedBox(
           width: widget.size,
           height: widget.size,
           child: CustomPaint(

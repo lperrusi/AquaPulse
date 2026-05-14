@@ -2,6 +2,7 @@
 ///
 /// Displays a circular progress indicator matching the Figma design exactly.
 /// Shows current intake, goal, and excess progress with golden color when goal is exceeded.
+library;
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -12,14 +13,16 @@ class ProgressCircle extends StatelessWidget {
   final double goal;
   final double size;
   final double strokeWidth;
+  final VoidCallback? onTap;
 
   const ProgressCircle({
-    Key? key,
+    super.key,
     required this.current,
     required this.goal,
     this.size = 200,
     this.strokeWidth = 12,
-  }) : super(key: key);
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -39,7 +42,7 @@ class ProgressCircle extends StatelessWidget {
     final radius = (size - strokeWidth) / 2;
     final circumference = 2 * math.pi * radius;
 
-    return Container(
+    final circle = Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
@@ -147,6 +150,25 @@ class ProgressCircle extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+
+    if (onTap == null) return circle;
+
+    return Semantics(
+      button: true,
+      label: 'Add water intake',
+      child: Tooltip(
+        message: 'Add water intake',
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey<String>('progress_circle_add_intake_tap'),
+            onTap: onTap,
+            behavior: HitTestBehavior.opaque,
+            child: circle,
+          ),
+        ),
       ),
     );
   }

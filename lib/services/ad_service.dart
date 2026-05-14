@@ -2,16 +2,57 @@
 ///
 /// Handles Google Mobile Ads integration with banner and interstitial ads.
 /// Uses test ad unit IDs for development and includes proper error handling.
+// ignore_for_file: use_build_context_synchronously
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
 
 /// Provider for the AdService (returns singleton instance)
 final adServiceProvider = Provider<AdService>((ref) => AdService.instance);
+
+enum BannerLoadState { idle, loading, loaded, failed }
+
+class BannerSlotState {
+  const BannerSlotState({
+    required this.status,
+    this.ad,
+    this.lastError,
+    this.adUnitId,
+    this.attemptCount = 0,
+  });
+
+  final BannerLoadState status;
+  final BannerAd? ad;
+  final String? lastError;
+  final String? adUnitId;
+  final int attemptCount;
+
+  const BannerSlotState.idle() : this(status: BannerLoadState.idle);
+
+  BannerSlotState copyWith({
+    BannerLoadState? status,
+    BannerAd? ad,
+    bool clearAd = false,
+    String? lastError,
+    bool clearLastError = false,
+    String? adUnitId,
+    int? attemptCount,
+  }) {
+    return BannerSlotState(
+      status: status ?? this.status,
+      ad: clearAd ? null : (ad ?? this.ad),
+      lastError: clearLastError ? null : (lastError ?? this.lastError),
+      adUnitId: adUnitId ?? this.adUnitId,
+      attemptCount: attemptCount ?? this.attemptCount,
+    );
+  }
+}
 
 /// Ad service that handles banner and interstitial ads
 class AdService {
@@ -27,9 +68,21 @@ class AdService {
   // AD CONFIGURATION - UPDATE THESE FOR PRODUCTION
   // ============================================================================
 
-  /// Set to false to use production ad IDs, true for test IDs
-  /// IMPORTANT: Set to false before releasing to production!
-  static const bool _useTestAds = true;
+  /// Enables test ad units in release when troubleshooting via --dart-define.
+  static const bool _forceTestAdsInRelease =
+      bool.fromEnvironment('FORCE_TEST_ADS', defaultValue: false);
+
+  /// Enables ad diagnostics logs in release via --dart-define.
+  static const bool _enableAdDiagnostics =
+      bool.fromEnvironment('ENABLE_ADS_DIAGNOSTICS', defaultValue: false);
+
+  /// Optional comma-separated iOS/Android test device IDs for ad requests.
+  static const String _testDeviceIdsRaw =
+      String.fromEnvironment('ADS_TEST_DEVICE_IDS', defaultValue: '');
+
+  /// Debug/profile always use test IDs.
+  /// Production IDs are used only in release builds unless forced for diagnostics.
+  bool get _useTestAds => !kReleaseMode || _forceTestAdsInRelease;
 
   // Test Ad Unit IDs (Google's test IDs - safe for development)
   static const String _testBannerAdUnitId =
@@ -57,36 +110,103 @@ class AdService {
 
   static const String _intakeCountKey = 'water_intake_count_for_ads';
   static const int _intakeIntervalForAd = 3; // Show ad after every 3rd intake
+  static const Duration _bannerInitialRetryDelay = Duration(seconds: 20);
+  static const Duration _interstitialInitialRetryDelay = Duration(seconds: 30);
+  static const Duration _maxRetryDelay = Duration(minutes: 10);
+  static const Duration _noFillCooldownDuration = Duration(minutes: 10);
+  static const int _noFillCooldownThreshold = 3;
+  static const Duration _minLoadInterval = Duration(seconds: 3);
 
   InterstitialAd? _interstitialAd;
   bool _isInterstitialAdReady = false;
+  bool _isInterstitialLoading = false;
+  int _interstitialFailureCount = 0;
+  DateTime? _interstitialCooldownUntil;
+  DateTime? _lastInterstitialLoadAttemptAt;
+  Timer? _interstitialRetryTimer;
+  final ValueNotifier<BannerSlotState> _topBannerState =
+      ValueNotifier<BannerSlotState>(const BannerSlotState.idle());
+  final ValueNotifier<BannerSlotState> _bottomBannerState =
+      ValueNotifier<BannerSlotState>(const BannerSlotState.idle());
+  int _topBannerFailureCount = 0;
+  int _bottomBannerFailureCount = 0;
+  DateTime? _topBannerCooldownUntil;
+  DateTime? _bottomBannerCooldownUntil;
+  DateTime? _topBannerLastLoadAttemptAt;
+  DateTime? _bottomBannerLastLoadAttemptAt;
+  bool _disableBannerAutoLoadForTesting = false;
+  Timer? _topBannerRetryTimer;
+  Timer? _bottomBannerRetryTimer;
+
+  ValueListenable<BannerSlotState> get topBannerState => _topBannerState;
+  ValueListenable<BannerSlotState> get bottomBannerState => _bottomBannerState;
 
   /// Initialize the ad service
   Future<void> initialize() async {
     try {
+      final testDeviceIds = _parseTestDeviceIds(_testDeviceIdsRaw);
+      if (testDeviceIds.isNotEmpty) {
+        await MobileAds.instance.updateRequestConfiguration(
+          RequestConfiguration(testDeviceIds: testDeviceIds),
+        );
+        _logAd('Init', 'configured test device IDs (${testDeviceIds.length})');
+      }
+
       // Initialize with test application ID
       await MobileAds.instance.initialize();
-      debugPrint('Ad service initialized successfully');
-      _loadInterstitialAd();
+      _logAd('Init',
+          'initialized successfully (mode: ${_useTestAds ? 'TEST' : 'PRODUCTION'})');
+      _loadInterstitialAd(trigger: 'initialize');
     } catch (e) {
-      debugPrint('Ad service initialization failed: $e');
+      _logAd('Init', 'initialization failed: $e');
       // Don't throw - ads are not critical for app functionality
     }
   }
 
   /// Load interstitial ad
-  Future<void> _loadInterstitialAd() async {
+  Future<void> _loadInterstitialAd({String trigger = 'auto'}) async {
     try {
-      debugPrint('Interstitial Ad: Starting to load ad...');
+      final now = DateTime.now();
+      if (_isInterstitialLoading) {
+        _logAd('Interstitial', 'skip load (already loading) trigger=$trigger');
+        return;
+      }
+      if (_interstitialAd != null && _isInterstitialAdReady) {
+        _logAd('Interstitial', 'skip load (already ready) trigger=$trigger');
+        return;
+      }
+      if (_interstitialCooldownUntil != null &&
+          now.isBefore(_interstitialCooldownUntil!)) {
+        _logAd(
+          'Interstitial',
+          'skip load (cooldown until ${_interstitialCooldownUntil!.toIso8601String()}) trigger=$trigger',
+        );
+        return;
+      }
+      if (_lastInterstitialLoadAttemptAt != null &&
+          now.difference(_lastInterstitialLoadAttemptAt!) < _minLoadInterval) {
+        _logAd('Interstitial', 'skip load (throttled) trigger=$trigger');
+        return;
+      }
+
+      _lastInterstitialLoadAttemptAt = now;
+      _isInterstitialLoading = true;
+      _logAd(
+        'Interstitial',
+        'loading start trigger=$trigger mode=${_useTestAds ? 'TEST' : 'PRODUCTION'} unitId=$interstitialAdUnitId',
+      );
       await InterstitialAd.load(
         adUnitId: interstitialAdUnitId,
         request: const AdRequest(),
         adLoadCallback: InterstitialAdLoadCallback(
           onAdLoaded: (ad) {
+            _interstitialRetryTimer?.cancel();
             _interstitialAd = ad;
             _isInterstitialAdReady = true;
-            debugPrint(
-                'Interstitial Ad: ✅ Loaded successfully and ready to show');
+            _isInterstitialLoading = false;
+            _interstitialFailureCount = 0;
+            _interstitialCooldownUntil = null;
+            _logAd('Interstitial', 'loaded successfully');
 
             // Set full screen content callback
             ad.fullScreenContentCallback = FullScreenContentCallback(
@@ -96,35 +216,35 @@ class AdService {
                 ad.dispose();
                 _interstitialAd = null;
                 _isInterstitialAdReady = false;
-                _loadInterstitialAd(); // Load next ad
+                _loadInterstitialAd(trigger: 'dismissed'); // Load next ad
               },
               onAdFailedToShowFullScreenContent: (ad, error) {
-                debugPrint('Interstitial Ad: ❌ Failed to show: $error');
+                _logAd('Interstitial', 'failed to show: $error');
                 ad.dispose();
                 _interstitialAd = null;
                 _isInterstitialAdReady = false;
-                _loadInterstitialAd(); // Try loading again
+                _loadInterstitialAd(trigger: 'failed_to_show'); // Try loading again
               },
               onAdShowedFullScreenContent: (ad) {
-                debugPrint('Interstitial Ad: ✅ Ad is now showing');
+                _logAd('Interstitial', 'ad is now showing');
               },
             );
           },
           onAdFailedToLoad: (error) {
-            debugPrint(
-                'Interstitial Ad: ❌ Failed to load: ${error.message} (Code: ${error.code})');
+            _isInterstitialLoading = false;
             _isInterstitialAdReady = false;
-            // Retry after a delay
-            Future.delayed(const Duration(seconds: 30), () {
-              debugPrint(
-                  'Interstitial Ad: Retrying to load after 30 seconds...');
-              _loadInterstitialAd();
-            });
+            _interstitialFailureCount++;
+            _logAd(
+              'Interstitial',
+              'failed code=${error.code} domain=${error.domain} message=${error.message} failures=$_interstitialFailureCount',
+            );
+            _scheduleInterstitialRetry(error.code);
           },
         ),
       );
     } catch (e) {
-      debugPrint('Interstitial Ad: ❌ Exception loading ad: $e');
+      _logAd('Interstitial', 'exception loading ad: $e');
+      _isInterstitialLoading = false;
       _isInterstitialAdReady = false;
     }
   }
@@ -150,8 +270,8 @@ class AdService {
 
         // If ad is not ready, try to load it and wait
         if (!_isInterstitialAdReady || _interstitialAd == null) {
-          debugPrint('Interstitial Ad: Ad not ready. Attempting to load...');
-          _loadInterstitialAd();
+          _logAd('Interstitial', 'not ready, attempting load');
+          _loadInterstitialAd(trigger: 'intake_threshold');
 
           // Wait up to 5 seconds for the ad to load
           int attempts = 0;
@@ -159,14 +279,13 @@ class AdService {
               attempts < 10) {
             await Future.delayed(const Duration(milliseconds: 500));
             attempts++;
-            debugPrint(
-                'Interstitial Ad: Waiting for ad to load... (attempt $attempts/10)');
+            _logAd('Interstitial', 'waiting for load attempt $attempts/10');
           }
         }
 
         // Show ad if it's ready
         if (_isInterstitialAdReady && _interstitialAd != null) {
-          debugPrint('Interstitial Ad: Ad is ready, showing now');
+          _logAd('Interstitial', 'ad ready, showing now');
 
           // Mark as not ready to prevent double-showing
           // The callback will handle reloading after dismissal
@@ -178,28 +297,30 @@ class AdService {
           // Show the ad - ensure we still have a valid reference
           if (_interstitialAd != null) {
             try {
-              debugPrint('Interstitial Ad: Calling show() now...');
+              _logAd('Interstitial', 'calling show()');
               _interstitialAd!.show();
-              debugPrint('Interstitial Ad: ✅ show() called successfully');
+              _logAd('Interstitial', 'show() called successfully');
             } catch (showError, stackTrace) {
-              debugPrint('Interstitial Ad: ❌ Error calling show(): $showError');
-              debugPrint('Interstitial Ad: Stack trace: $stackTrace');
+              _logAd('Interstitial', 'error calling show(): $showError');
+              _logAd('Interstitial', 'stack trace: $stackTrace');
               // Dispose the ad and try to reload for next time
               _interstitialAd?.dispose();
               _interstitialAd = null;
               _isInterstitialAdReady = false;
-              _loadInterstitialAd();
+              _loadInterstitialAd(trigger: 'show_exception');
             }
           } else {
-            debugPrint('Interstitial Ad: ❌ Ad became null before showing');
+            _logAd('Interstitial', 'ad became null before showing');
             _isInterstitialAdReady = false;
-            _loadInterstitialAd();
+            _loadInterstitialAd(trigger: 'ad_became_null');
           }
         } else {
-          debugPrint(
-              'Interstitial Ad: ❌ Ad still not ready after waiting. Ready: $_isInterstitialAdReady, Ad: ${_interstitialAd != null}');
-          // Try to reload for next time
-          _loadInterstitialAd();
+          _logAd(
+            'Interstitial',
+            'ad still not ready after waiting. ready=$_isInterstitialAdReady exists=${_interstitialAd != null}',
+          );
+          // Keep trying for next natural opportunity, but avoid duplicate active loads.
+          _loadInterstitialAd(trigger: 'not_ready_after_wait');
         }
       } else {
         debugPrint(
@@ -307,58 +428,244 @@ class AdService {
     }
   }
 
-  /// Create a banner ad widget.
-  /// [isBottom] true = bottom banner (AquaPulse Banner Bottom), false = top banner (AquaPulse Banner Top).
-  Widget createBannerAd(WidgetRef ref, {bool isBottom = false}) {
+  /// Loads a dashboard banner if needed.
+  /// [isBottom] true = bottom banner, false = top banner.
+  void ensureBannerLoaded({bool isBottom = false}) {
+    if (_disableBannerAutoLoadForTesting) return;
+
+    final state = _getBannerNotifier(isBottom);
+    final current = state.value.status;
+    if (current == BannerLoadState.loading || current == BannerLoadState.loaded) {
+      return;
+    }
+
+    final now = DateTime.now();
+    final cooldownUntil = _getBannerCooldown(isBottom);
+    if (cooldownUntil != null && now.isBefore(cooldownUntil)) {
+      debugPrint(
+          'Banner Ad [${isBottom ? 'bottom' : 'top'}]: skip load (cooldown until ${cooldownUntil.toIso8601String()})');
+      return;
+    }
+    final lastAttempt = _getBannerLastAttempt(isBottom);
+    if (lastAttempt != null && now.difference(lastAttempt) < _minLoadInterval) {
+      debugPrint(
+          'Banner Ad [${isBottom ? 'bottom' : 'top'}]: skip load (throttled)');
+      return;
+    }
+    _setBannerLastAttempt(isBottom, now);
+
     final adUnitId = isBottom ? bannerBottomAdUnitId : bannerTopAdUnitId;
-    try {
-      return Container(
-        width: double.infinity,
-        height: 60,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey[300]!,
-              width: 1,
-            ),
-          ),
-        ),
-        child: AdWidget(
-          ad: BannerAd(
+    final placement = isBottom ? 'bottom' : 'top';
+    final platform = defaultTargetPlatform.name;
+    _cancelBannerRetry(isBottom);
+    state.value = state.value.copyWith(
+      status: BannerLoadState.loading,
+      clearAd: true,
+      clearLastError: true,
+      adUnitId: adUnitId,
+      attemptCount: state.value.attemptCount + 1,
+    );
+    debugPrint(
+        'Banner Ad [$placement/$platform]: loading with unitId=$adUnitId mode=${_useTestAds ? 'TEST' : 'PRODUCTION'}');
+
+    final ad = BannerAd(
+      adUnitId: adUnitId,
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (loadedAd) {
+          _setBannerFailureCount(isBottom, 0);
+          _setBannerCooldown(isBottom, null);
+          state.value = BannerSlotState(
+            status: BannerLoadState.loaded,
+            ad: loadedAd as BannerAd,
             adUnitId: adUnitId,
-            size: AdSize.banner,
-            request: const AdRequest(),
-            listener: BannerAdListener(
-              onAdLoaded: (ad) {
-                debugPrint('Banner ad loaded successfully');
-              },
-              onAdFailedToLoad: (ad, error) {
-                debugPrint('Banner ad failed to load: $error');
-                ad.dispose();
-              },
-            ),
-          )..load(),
-        ),
-      );
-    } catch (e) {
-      debugPrint('Error creating banner ad: $e');
-      // Return a placeholder if ad creation fails
-      return Container(
-        width: double.infinity,
-        height: 60,
-        color: Colors.grey[200],
-        child: const Center(
-          child: Text(
-            'Ad Space',
-            style: TextStyle(
-              color: Colors.grey,
-              fontSize: 12,
-            ),
-          ),
-        ),
+            attemptCount: state.value.attemptCount,
+          );
+          debugPrint('Banner Ad [$placement/$platform]: loaded successfully');
+        },
+        onAdFailedToLoad: (failedAd, error) {
+          debugPrint(
+              'Banner Ad [$placement/$platform]: failed code=${error.code} domain=${error.domain} message=${error.message} unitId=$adUnitId');
+          failedAd.dispose();
+          state.value = state.value.copyWith(
+            status: BannerLoadState.failed,
+            clearAd: true,
+            lastError:
+                'code=${error.code}; domain=${error.domain}; message=${error.message}',
+            adUnitId: adUnitId,
+          );
+          _setBannerFailureCount(
+              isBottom, _getBannerFailureCount(isBottom) + 1);
+          _scheduleBannerRetry(isBottom, error.code);
+        },
+      ),
+    );
+
+    state.value.ad?.dispose();
+    state.value = state.value.copyWith(clearAd: true);
+    ad.load();
+  }
+
+  void _scheduleBannerRetry(bool isBottom, int errorCode) {
+    if (_disableBannerAutoLoadForTesting) return;
+    _cancelBannerRetry(isBottom);
+    final placement = isBottom ? 'bottom' : 'top';
+    final failureCount = _getBannerFailureCount(isBottom);
+    final now = DateTime.now();
+    Duration delay;
+    if (errorCode == 1 && failureCount >= _noFillCooldownThreshold) {
+      final cooldownUntil = now.add(_noFillCooldownDuration);
+      _setBannerCooldown(isBottom, cooldownUntil);
+      delay = _noFillCooldownDuration;
+      debugPrint(
+          'Banner Ad [$placement]: entering no-fill cooldown for ${delay.inMinutes}m');
+    } else {
+      _setBannerCooldown(isBottom, null);
+      delay = _nextRetryDelay(
+        failureCount: failureCount,
+        initial: _bannerInitialRetryDelay,
       );
     }
+    final retryTimer = Timer(
+      delay,
+      () {
+        debugPrint('Banner Ad [$placement]: retrying load after failure');
+        ensureBannerLoaded(isBottom: isBottom);
+      },
+    );
+    if (isBottom) {
+      _bottomBannerRetryTimer = retryTimer;
+    } else {
+      _topBannerRetryTimer = retryTimer;
+    }
+  }
+
+  void _cancelBannerRetry(bool isBottom) {
+    if (isBottom) {
+      _bottomBannerRetryTimer?.cancel();
+      _bottomBannerRetryTimer = null;
+      return;
+    }
+    _topBannerRetryTimer?.cancel();
+    _topBannerRetryTimer = null;
+  }
+
+  int _getBannerFailureCount(bool isBottom) =>
+      isBottom ? _bottomBannerFailureCount : _topBannerFailureCount;
+
+  void _setBannerFailureCount(bool isBottom, int value) {
+    if (isBottom) {
+      _bottomBannerFailureCount = value;
+    } else {
+      _topBannerFailureCount = value;
+    }
+  }
+
+  DateTime? _getBannerCooldown(bool isBottom) =>
+      isBottom ? _bottomBannerCooldownUntil : _topBannerCooldownUntil;
+
+  void _setBannerCooldown(bool isBottom, DateTime? value) {
+    if (isBottom) {
+      _bottomBannerCooldownUntil = value;
+    } else {
+      _topBannerCooldownUntil = value;
+    }
+  }
+
+  DateTime? _getBannerLastAttempt(bool isBottom) =>
+      isBottom ? _bottomBannerLastLoadAttemptAt : _topBannerLastLoadAttemptAt;
+
+  void _setBannerLastAttempt(bool isBottom, DateTime value) {
+    if (isBottom) {
+      _bottomBannerLastLoadAttemptAt = value;
+    } else {
+      _topBannerLastLoadAttemptAt = value;
+    }
+  }
+
+  Duration _nextRetryDelay({
+    required int failureCount,
+    required Duration initial,
+  }) {
+    final exponent = (failureCount - 1).clamp(0, 10);
+    final candidate = initial * (1 << exponent);
+    return candidate > _maxRetryDelay ? _maxRetryDelay : candidate;
+  }
+
+  void _scheduleInterstitialRetry(int errorCode) {
+    _interstitialRetryTimer?.cancel();
+    Duration delay;
+    if (errorCode == 1 && _interstitialFailureCount >= _noFillCooldownThreshold) {
+      _interstitialCooldownUntil = DateTime.now().add(_noFillCooldownDuration);
+      delay = _noFillCooldownDuration;
+      _logAd(
+        'Interstitial',
+        'entering no-fill cooldown for ${delay.inMinutes}m',
+      );
+    } else {
+      _interstitialCooldownUntil = null;
+      delay = _nextRetryDelay(
+        failureCount: _interstitialFailureCount,
+        initial: _interstitialInitialRetryDelay,
+      );
+    }
+
+    _interstitialRetryTimer = Timer(delay, () {
+      _logAd('Interstitial', 'retrying load after ${delay.inSeconds}s');
+      _loadInterstitialAd(trigger: 'scheduled_retry');
+    });
+  }
+
+  void _logAd(String scope, String message) {
+    if (!_enableAdDiagnostics && kReleaseMode) return;
+    final mode = _useTestAds ? 'TEST' : 'PRODUCTION';
+    developer.log(
+      'Ad[$scope][$mode]: $message',
+      name: 'AdService',
+    );
+  }
+
+  List<String> _parseTestDeviceIds(String raw) {
+    if (raw.trim().isEmpty) return const <String>[];
+    return raw
+        .split(',')
+        .map((id) => id.trim())
+        .where((id) => id.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  ValueNotifier<BannerSlotState> _getBannerNotifier(bool isBottom) {
+    return isBottom ? _bottomBannerState : _topBannerState;
+  }
+
+  @visibleForTesting
+  void debugSetBannerState({
+    required bool isBottom,
+    required BannerLoadState status,
+  }) {
+    _getBannerNotifier(isBottom).value =
+        BannerSlotState(status: status, ad: null, attemptCount: 1);
+  }
+
+  @visibleForTesting
+  void debugDisableBannerAutoLoad(bool disable) {
+    _disableBannerAutoLoadForTesting = disable;
+  }
+
+  @visibleForTesting
+  void debugResetBannerStates() {
+    _cancelBannerRetry(false);
+    _cancelBannerRetry(true);
+    _topBannerState.value = const BannerSlotState.idle();
+    _bottomBannerState.value = const BannerSlotState.idle();
+    _topBannerFailureCount = 0;
+    _bottomBannerFailureCount = 0;
+    _topBannerCooldownUntil = null;
+    _bottomBannerCooldownUntil = null;
+    _topBannerLastLoadAttemptAt = null;
+    _bottomBannerLastLoadAttemptAt = null;
+    _disableBannerAutoLoadForTesting = false;
   }
 
   /// Get the current status of the interstitial ad (for debugging)
@@ -425,6 +732,11 @@ class AdService {
 
   /// Dispose any resources
   void dispose() {
+    _interstitialRetryTimer?.cancel();
+    _cancelBannerRetry(false);
+    _cancelBannerRetry(true);
+    _topBannerState.value.ad?.dispose();
+    _bottomBannerState.value.ad?.dispose();
     _interstitialAd?.dispose();
     _isInterstitialAdReady = false;
   }

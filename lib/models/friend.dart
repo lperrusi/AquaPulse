@@ -2,6 +2,7 @@
 ///
 /// Defines friend relationships and social connections for the hydration tracker app.
 /// Handles friend requests, status, and social interactions.
+library;
 
 enum FriendStatus {
   pending,    // Friend request sent, waiting for response

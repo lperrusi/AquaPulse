@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../utils/neumorphic_style.dart';
@@ -9,7 +10,7 @@ import '../utils/neumorphic_style.dart';
 class SplashScreen extends StatefulWidget {
   final Widget nextScreen;
 
-  const SplashScreen({Key? key, required this.nextScreen}) : super(key: key);
+  const SplashScreen({super.key, required this.nextScreen});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();

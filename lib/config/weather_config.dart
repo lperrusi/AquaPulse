@@ -1,17 +1,17 @@
 /// Weather Configuration
 ///
-/// Configuration file for weather service API keys and settings.
-/// To use weather features, you need to:
-/// 1. Sign up at https://openweathermap.org/api
-/// 2. Get your free API key
-/// 3. Replace the placeholder below with your actual API key
+/// Production weather uses a **Firebase Callable** proxy; the OpenWeather key
+/// lives in Cloud Functions secrets (`OPENWEATHER_API_KEY`), not in the app.
+///
+/// Optional compile-time key for **local/dev direct API** fallback only:
+/// `--dart-define=OPEN_WEATHER_API_KEY=your_key`
+library;
 
 class WeatherConfig {
-  /// OpenWeatherMap API Key
-  /// 
-  /// Get your free API key from: https://openweathermap.org/api
-  /// Replace this with your actual API key to enable weather features
-  static const String openWeatherApiKey = 'a0818671fb56460bd8a7686af722a031';
+  /// Optional dev-only OpenWeather key (direct HTTP from the app).
+  /// Release builds can omit this when `getCurrentWeatherProxy` is deployed.
+  static const String openWeatherApiKey =
+      String.fromEnvironment('OPEN_WEATHER_API_KEY', defaultValue: '');
   
   /// Weather update frequency in minutes
   static const int defaultUpdateFrequencyMinutes = 30;
@@ -25,15 +25,15 @@ class WeatherConfig {
   /// Units for temperature (metric = Celsius, imperial = Fahrenheit)
   static const String units = 'metric';
   
-  /// Check if weather features are enabled
+  /// True when a direct client API key is compiled in (dev fallback).
+  /// Signed-in users can still use weather via the server proxy without this.
   static bool get isEnabled => openWeatherApiKey.isNotEmpty;
   
   /// Get configuration status message
   static String get statusMessage {
     if (isEnabled) {
-      return 'Weather features enabled';
-    } else {
-      return 'Weather features disabled - API key not configured';
+      return 'Direct weather API key configured (dev fallback)';
     }
+    return 'Using server weather proxy when signed in (no client API key)';
   }
 }

@@ -2,15 +2,18 @@
 ///
 /// This screen allows the user to view and update their personal information, including name, weight, activity level, and hydration goal.
 /// It also displays user statistics and provides a logout option. Uses Riverpod for state management.
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_element, unused_local_variable
+library;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/user.dart';
+import '../config/app_capabilities.dart';
+import '../config/app_urls.dart';
 import '../providers/app_providers.dart';
-import '../services/ad_service.dart';
-import '../services/hydration_service.dart';
 import '../services/auth_service.dart';
-import 'login_screen.dart';
-import 'register_screen.dart';
 import 'notification_settings_screen.dart';
 import '../utils/neumorphic_style.dart';
 
@@ -33,13 +36,15 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final _ageFocusNode = FocusNode();
   final _weightFocusNode = FocusNode();
   final _goalFocusNode = FocusNode();
-  
+
   ActivityLevel _selectedActivityLevel = ActivityLevel.moderatelyActive;
   String? _selectedGender;
   bool _isLoading = false;
   // Track provider user so we only sync when provider actually changes (e.g. after save)
   String? _lastProviderUserId;
   int? _lastProviderUpdatedAt;
+  static const int _minDailyGoal = 100;
+  static const int _maxDailyGoal = 10000;
 
   @override
   void initState() {
@@ -56,7 +61,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _weightController.text = user.weight.toString();
       _goalController.text = dailyGoal.toInt().toString();
       _selectedActivityLevel = user.activityLevel;
-      _selectedGender = user.gender;
+      _selectedGender = _normalizedGenderForUi(user.gender);
       _lastProviderUserId = user.id;
       _lastProviderUpdatedAt = user.updatedAt.millisecondsSinceEpoch;
     }
@@ -92,7 +97,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         if (weight == null || weight < 1 || weight > 500) {
           throw Exception('Please enter a valid weight (1-500 kg)');
         }
-        
+
         // Parse age (optional)
         int? age;
         final ageText = _ageController.text.trim();
@@ -102,12 +107,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             throw Exception('Please enter a valid age (1-150)');
           }
         }
-        
+
         final updatedUser = user.copyWith(
-          name: _nameController.text.trim().isEmpty ? null : _nameController.text.trim(),
           age: age,
           weight: weight,
-          gender: _selectedGender,
+          gender: _genderForPersistence(_selectedGender),
           activityLevel: _selectedActivityLevel,
           updatedAt: DateTime.now(),
         );
@@ -115,16 +119,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         debugPrint('Updating user profile: ${updatedUser.toJson()}');
         await ref.read(currentUserProvider.notifier).updateUser(updatedUser);
         debugPrint('User profile updated successfully');
-        
+
         // Update local state to reflect the saved changes immediately
         setState(() {
           _selectedActivityLevel = updatedUser.activityLevel;
           _selectedGender = updatedUser.gender;
         });
-        
+
         // Reload user data to reflect changes in the UI (for controllers, etc.)
         _loadUserData();
-        
+
         // Daily goal will be recalculated automatically by the provider
 
         if (mounted) {
@@ -155,6 +159,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
+  List<TextInputFormatter>? _inputFormattersForField(String label) {
+    if (label == 'Age') {
+      return <TextInputFormatter>[FilteringTextInputFormatter.digitsOnly];
+    }
+    if (label == 'Weight') {
+      return <TextInputFormatter>[
+        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}$')),
+      ];
+    }
+    return null;
+  }
+
+  Future<void> _updateDailyGoalFromInput(String value) async {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return;
+
+    final newGoal = double.tryParse(trimmed);
+    if (newGoal == null || newGoal < _minDailyGoal || newGoal > _maxDailyGoal) {
+      return;
+    }
+
+    try {
+      final currentUser = ref.read(currentUserProvider);
+      if (currentUser == null) return;
+      await ref.read(currentUserProvider.notifier).updateUser(
+            currentUser.copyWith(customGoal: newGoal),
+          );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to update hydration goal: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
@@ -178,7 +220,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       if (providerChanged) {
         setState(() {
           _selectedActivityLevel = user.activityLevel;
-          _selectedGender = user.gender;
+          _selectedGender = _normalizedGenderForUi(user.gender);
           _lastProviderUserId = user.id;
           _lastProviderUpdatedAt = user.updatedAt.millisecondsSinceEpoch;
         });
@@ -217,7 +259,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                             const SizedBox(height: 4), // mt-1 = 4px
                             Text(
-                              'Manage your account settings',
+                              AppCapabilities.authEnabled
+                                  ? 'Manage your account settings'
+                                  : 'Manage your profile settings',
                               style: TextStyle(
                                 fontSize: 14, // text-sm = 14px
                                 color: NeumorphicStyle.lightText,
@@ -225,78 +269,64 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             ),
                           ],
                         ),
-                        // Logout button - matches Figma
-                        Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12), // rounded-xl
-                            border: Border.all(
-                              color: NeumorphicStyle.softBorder,
-                              width: 1,
+                        if (AppCapabilities.authEnabled)
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: NeumorphicStyle.softBorder,
+                                width: 1,
+                              ),
                             ),
-                          ),
-                          child: TextButton.icon(
-                            onPressed: () => _showLogoutDialog(),
-                            icon: Icon(
-                              Icons.logout,
-                              color: NeumorphicStyle.lightText,
-                              size: 16, // w-4 h-4 = 16px
-                            ),
-                            label: Text(
-                              'Logout',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
+                            child: TextButton.icon(
+                              onPressed: () => _showLogoutDialog(),
+                              icon: Icon(
+                                Icons.logout,
                                 color: NeumorphicStyle.lightText,
+                                size: 16,
+                              ),
+                              label: Text(
+                                'Logout',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: NeumorphicStyle.lightText,
+                                ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
-                  
+
                   // Content - matches Figma: px-6 space-y-6 max-w-2xl mx-auto
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24), // px-6
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        // Profile Picture - matches Figma
-                        Container(
-                          width: 96, // w-24 = 96px
-                          height: 96,
-                          decoration: BoxDecoration(
-                            gradient: NeumorphicStyle.primaryGradient(),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.person,
-                            color: Colors.white,
-                            size: 48, // w-12 h-12 = 48px
-                          ),
-                        ),
-                        const SizedBox(height: 24), // space-y-6 = 24px
-                        
                         // Personal Information - matches Figma
-                        _buildPersonalInfoSection(user),
+                        _buildPersonalInfoSection(),
                         const SizedBox(height: 24),
-                        
+
                         // Activity Level - matches Figma
                         _buildActivityLevelSection(user),
                         const SizedBox(height: 24),
-                        
+
                         // Daily Hydration Goal - matches Figma
                         _buildDailyGoalSection(dailyGoal),
                         const SizedBox(height: 24),
-                        
+
                         // Update Button - matches Figma
                         Container(
                           decoration: BoxDecoration(
                             gradient: NeumorphicStyle.primaryGradient(),
-                            borderRadius: BorderRadius.circular(16), // rounded-2xl
+                            borderRadius:
+                                BorderRadius.circular(16), // rounded-2xl
                             boxShadow: [
                               BoxShadow(
-                                color: NeumorphicStyle.primaryBlue.withOpacity(0.3),
+                                color: NeumorphicStyle.primaryBlue
+                                    .withOpacity(0.3),
                                 blurRadius: 12,
                                 offset: const Offset(0, 4),
                               ),
@@ -307,7 +337,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.transparent,
                               shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 16), // py-4
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: 16), // py-4
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
                               ),
@@ -332,81 +363,92 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Notification Settings - matches Figma
                         _buildNotificationSettingsSection(),
-                      
-                      // Show "Go No Ads" button for local users
-                      if (ref.watch(authProvider) == AuthState.unauthenticated) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                const Color(0xFFFFD54F).withOpacity(0.1),
-                                const Color(0xFFFFC107).withOpacity(0.05),
-                              ],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(
-                              color: const Color(0xFFFFC107).withOpacity(0.3),
-                              width: 1.5,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                        const SizedBox(height: 24),
+
+                        // Legal, privacy, and account section
+                        _buildLegalSection(),
+
+                        // Show "Go No Ads" in offline mode (or for unauthenticated users if auth is enabled)
+                        if (!AppCapabilities.authEnabled ||
+                            ref.watch(authProvider) ==
+                                AuthState.unauthenticated) ...[
+                          const SizedBox(height: 16),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  const Color(0xFFFFD54F).withOpacity(0.1),
+                                  const Color(0xFFFFC107).withOpacity(0.05),
+                                ],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
                               ),
-                            ],
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => _showNoAdsDialog(context),
                               borderRadius: BorderRadius.circular(18),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        gradient: const LinearGradient(
-                                          colors: [Color(0xFFFFD54F), Color(0xFFFFC107)],
-                                          begin: Alignment.topLeft,
-                                          end: Alignment.bottomRight,
+                              border: Border.all(
+                                color: const Color(0xFFFFC107).withOpacity(0.3),
+                                width: 1.5,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _showNoAdsDialog(context),
+                                borderRadius: BorderRadius.circular(18),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 18, horizontal: 20),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(
+                                            colors: [
+                                              Color(0xFFFFD54F),
+                                              Color(0xFFFFC107)
+                                            ],
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(10),
                                         ),
-                                        borderRadius: BorderRadius.circular(10),
+                                        child: const Icon(
+                                          Icons.block,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
                                       ),
-                                      child: const Icon(
-                                        Icons.block,
-                                        color: Colors.white,
-                                        size: 20,
+                                      const SizedBox(width: 12),
+                                      const Text(
+                                        'Go No Ads',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: NeumorphicStyle.darkText,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    const Text(
-                                      'Go No Ads',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: NeumorphicStyle.darkText,
-                                      ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
                 ],
               ),
             ),
@@ -416,112 +458,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileHeader(User user) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            NeumorphicStyle.primaryBlue.withOpacity(0.1),
-            NeumorphicStyle.primaryBlue.withOpacity(0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: NeumorphicStyle.primaryBlue.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Profile icon
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2196F3).withOpacity(0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: const Icon(
-              Icons.person,
-              color: Colors.white,
-              size: 32,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Name
-          Text(
-            user.name ?? 'John Doe',
-            style: NeumorphicStyle.neumorphicText(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          // Email
-          Text(
-            user.email,
-            style: NeumorphicStyle.neumorphicText(
-              fontSize: 14,
-              color: NeumorphicStyle.lightText,
-              fontWeight: FontWeight.w400,
-            ),
-          ),
-          const SizedBox(height: 16),
-          // Status badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF2196F3).withOpacity(0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: const Text(
-              'Active',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPersonalInfoSection(User user) {
+  Widget _buildPersonalInfoSection() {
     return Container(
       padding: const EdgeInsets.all(20), // p-5 = 20px
       decoration: BoxDecoration(
@@ -538,38 +475,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title - matches Figma: text-lg font-semibold
-          Text(
-            'Personal Information',
-            style: TextStyle(
-              fontSize: 18, // text-lg = 18px
-              fontWeight: FontWeight.w600, // font-semibold
-              color: NeumorphicStyle.darkText,
-            ),
-          ),
-          const SizedBox(height: 16), // mb-4 = 16px
-          
-          // Name field - matches Figma
-          _buildInfoField(
-            label: 'Name',
-            icon: Icons.person_outline,
-            controller: _nameController,
-            focusNode: _nameFocusNode,
-            hintText: 'Enter your name',
-          ),
-          const SizedBox(height: 16), // space-y-4 = 16px
-          
-          // Email field - matches Figma (readonly)
-          _buildInfoField(
-            label: 'Email',
-            icon: Icons.mail_outline,
-            controller: TextEditingController(text: user.email),
-            focusNode: null,
-            hintText: 'Email',
-            readOnly: true,
-          ),
-          const SizedBox(height: 16),
-          
           // Age and Weight - matches Figma: grid grid-cols-2 gap-4
           Row(
             children: [
@@ -628,7 +533,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          
+
           // Gender - matches Figma
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
@@ -649,7 +554,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               ),
               const SizedBox(width: 12), // gap-3 = 12px
               Expanded(
-                child: _buildGenderButton('female', _selectedGender == 'female'),
+                child:
+                    _buildGenderButton('female', _selectedGender == 'female'),
               ),
             ],
           ),
@@ -709,17 +615,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   focusNode: focusNode,
                   readOnly: readOnly,
                   validator: validator,
-                  keyboardType: label == 'Age' || label == 'Weight' 
-                      ? TextInputType.number 
-                      : TextInputType.text,
+                  keyboardType: label == 'Age'
+                      ? TextInputType.number
+                      : label == 'Weight'
+                          ? const TextInputType.numberWithOptions(decimal: true)
+                          : TextInputType.text,
+                  inputFormatters: _inputFormattersForField(label),
                   style: TextStyle(
                     fontSize: 16,
-                    color: readOnly ? NeumorphicStyle.lightText : NeumorphicStyle.darkText,
+                    color: readOnly
+                        ? NeumorphicStyle.lightText
+                        : NeumorphicStyle.darkText,
                   ),
                   decoration: InputDecoration(
                     hintText: hintText,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12), // py-3 = 12px
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 12), // py-3 = 12px
                     hintStyle: TextStyle(color: NeumorphicStyle.lightText),
                     errorStyle: TextStyle(
                       color: Colors.red,
@@ -772,6 +684,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ),
       ),
     );
+  }
+
+  String? _normalizedGenderForUi(String? rawGender) {
+    if (rawGender == null || rawGender.isEmpty) return null;
+    final normalized = rawGender.trim().toLowerCase();
+    if (normalized == 'm' || normalized == 'male') return 'male';
+    if (normalized == 'f' || normalized == 'female') return 'female';
+    return null;
+  }
+
+  String? _genderForPersistence(String? uiGender) {
+    if (uiGender == null || uiGender.isEmpty) return null;
+    return uiGender == 'male' ? 'M' : 'F';
   }
 
   Widget _buildActivityLevelSection(User user) {
@@ -950,13 +875,14 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             _goalController.text = newValue;
             // Restore cursor position if it was at the end
             if (selection.isValid && selection.end == currentValue.length) {
-              _goalController.selection = TextSelection.collapsed(offset: newValue.length);
+              _goalController.selection =
+                  TextSelection.collapsed(offset: newValue.length);
             }
           }
         });
       }
     }
-    
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -1005,6 +931,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     controller: _goalController,
                     focusNode: _goalFocusNode,
                     keyboardType: TextInputType.number,
+                    inputFormatters: <TextInputFormatter>[
+                      FilteringTextInputFormatter.digitsOnly,
+                    ],
+                    validator: (value) {
+                      final trimmed = value?.trim() ?? '';
+                      if (trimmed.isEmpty) {
+                        return 'Please enter a daily goal';
+                      }
+                      final goal = int.tryParse(trimmed);
+                      if (goal == null ||
+                          goal < _minDailyGoal ||
+                          goal > _maxDailyGoal) {
+                        return 'Use a goal between $_minDailyGoal and $_maxDailyGoal ml';
+                      }
+                      return null;
+                    },
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -1015,13 +957,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       contentPadding: EdgeInsets.zero,
                     ),
                     onChanged: (value) {
-                      final newGoal = double.tryParse(value);
-                      if (newGoal != null && newGoal > 0) {
-                        // Update goal
-                        ref.read(currentUserProvider.notifier).updateUser(
-                          ref.read(currentUserProvider)!.copyWith(customGoal: newGoal),
-                        );
-                      }
+                      _updateDailyGoalFromInput(value);
                     },
                   ),
                 ),
@@ -1031,222 +967,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
                     color: NeumorphicStyle.lightText,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Old method - keeping for reference but not used
-  Widget _buildPersonalInfoSectionOld() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: NeumorphicStyle.backgroundBlue,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: NeumorphicStyle.primaryBlue.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with icon
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF2196F3).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.person_outline,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Personal Information',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: NeumorphicStyle.darkText,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Update your profile details',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 12,
-                        color: NeumorphicStyle.lightText,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Name field
-          Container(
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              color: NeumorphicStyle.surfaceBlue,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: NeumorphicStyle.softBorder,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Name',
-                    style: NeumorphicStyle.neumorphicText(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: NeumorphicStyle.lightText,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: TextFormField(
-                    controller: _nameController,
-                    focusNode: _nameFocusNode,
-                    textInputAction: TextInputAction.done,
-                    onFieldSubmitted: (_) {
-                      FocusScope.of(context).unfocus();
-                    },
-                    style: NeumorphicStyle.neumorphicText(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    decoration: InputDecoration(
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
-                      hintText: 'Enter your name',
-                      hintStyle: NeumorphicStyle.neumorphicText(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFFBBBBBB),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          
-          // Weight field
-          Container(
-            decoration: BoxDecoration(
-              color: NeumorphicStyle.surfaceBlue,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: NeumorphicStyle.softBorder,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                  child: Text(
-                    'Weight',
-                    style: NeumorphicStyle.neumorphicText(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: NeumorphicStyle.lightText,
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _weightController,
-                          focusNode: _weightFocusNode,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          textInputAction: TextInputAction.done,
-                          onFieldSubmitted: (_) {
-                            FocusScope.of(context).unfocus();
-                          },
-                          style: NeumorphicStyle.neumorphicText(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                          decoration: InputDecoration(
-                            border: InputBorder.none,
-                            isDense: true,
-                            contentPadding: const EdgeInsets.fromLTRB(12, 8, 0, 8),
-                            hintText: 'Enter your weight',
-                            hintStyle: NeumorphicStyle.neumorphicText(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFFBBBBBB),
-                            ),
-                          ),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Please enter your weight';
-                            }
-                            final weight = double.tryParse(value);
-                            if (weight == null) {
-                              return 'Please enter a valid number';
-                            }
-                            if (weight < 20 || weight > 300) {
-                              return 'Please enter a valid weight (20-300 kg)';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'kg',
-                        style: NeumorphicStyle.neumorphicText(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ],
@@ -1390,12 +1110,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 decoration: BoxDecoration(
                                   gradient: isSelected
                                       ? const LinearGradient(
-                                          colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
+                                          colors: [
+                                            Color(0xFF4FC3F7),
+                                            Color(0xFF2196F3)
+                                          ],
                                           begin: Alignment.topLeft,
                                           end: Alignment.bottomRight,
                                         )
                                       : null,
-                                  color: isSelected ? null : NeumorphicStyle.surfaceBlue,
+                                  color: isSelected
+                                      ? null
+                                      : NeumorphicStyle.surfaceBlue,
                                   shape: BoxShape.circle,
                                   border: isSelected
                                       ? null
@@ -1405,7 +1130,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   boxShadow: isSelected
                                       ? [
                                           BoxShadow(
-                                            color: const Color(0xFF2196F3).withOpacity(0.3),
+                                            color: const Color(0xFF2196F3)
+                                                .withOpacity(0.3),
                                             blurRadius: 6,
                                             offset: const Offset(0, 2),
                                           ),
@@ -1414,7 +1140,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ),
                                 child: Icon(
                                   Icons.fitness_center,
-                                  color: isSelected ? Colors.white : NeumorphicStyle.lightText,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : NeumorphicStyle.lightText,
                                   size: 20,
                                 ),
                               ),
@@ -1427,7 +1155,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                       level.displayName,
                                       style: NeumorphicStyle.neumorphicText(
                                         fontSize: 16,
-                                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w700
+                                            : FontWeight.w600,
                                         color: isSelected
                                             ? NeumorphicStyle.primaryBlue
                                             : NeumorphicStyle.darkText,
@@ -1450,7 +1180,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
-                                      colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
+                                      colors: [
+                                        Color(0xFF4FC3F7),
+                                        Color(0xFF2196F3)
+                                      ],
                                     ),
                                     shape: BoxShape.circle,
                                   ),
@@ -1490,428 +1223,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     }
   }
 
-  // Old method - keeping for reference but not used
-  Widget _buildActivityLevelSectionOld() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: NeumorphicStyle.backgroundBlue,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: NeumorphicStyle.primaryBlue.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with icon
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF2196F3).withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.fitness_center,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Activity Level',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: NeumorphicStyle.darkText,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Select your daily activity',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 12,
-                        color: NeumorphicStyle.lightText,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // Activity level selector
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  NeumorphicStyle.primaryBlue.withOpacity(0.1),
-                  NeumorphicStyle.primaryBlue.withOpacity(0.05),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: NeumorphicStyle.primaryBlue.withOpacity(0.2),
-                width: 1,
-              ),
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  _showActivityLevelSheet();
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _selectedActivityLevel.displayName,
-                              style: NeumorphicStyle.neumorphicText(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: NeumorphicStyle.darkText,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _getActivityDescription(_selectedActivityLevel),
-                              style: NeumorphicStyle.neumorphicText(
-                                fontSize: 12,
-                                color: NeumorphicStyle.lightText,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF2196F3).withOpacity(0.3),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: const Icon(
-                          Icons.fitness_center,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditGoalDialog(BuildContext context, User? user, double currentGoal, double recommendedGoal) async {
-    final controller = TextEditingController(text: currentGoal.toInt().toString());
-    final formKey = GlobalKey<FormState>();
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
-        ),
-        elevation: 0,
-        backgroundColor: Colors.transparent,
-        child: Container(
-          decoration: BoxDecoration(
-            color: NeumorphicStyle.backgroundBlue,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header with icon and title
-              Container(
-                padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFF2196F3).withOpacity(0.1),
-                      Colors.transparent,
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(28),
-                    topRight: Radius.circular(28),
-                  ),
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF2196F3).withOpacity(0.3),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.track_changes,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Edit Daily Goal',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Set your custom hydration goal',
-                      style: NeumorphicStyle.neumorphicText(
-                        fontSize: 14,
-                        color: NeumorphicStyle.lightText,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: controller,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        decoration: InputDecoration(
-                          labelText: 'Goal (ml)',
-                          labelStyle: NeumorphicStyle.neumorphicText(
-                            fontSize: 14,
-                            color: NeumorphicStyle.lightText,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: NeumorphicStyle.softBorder,
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: NeumorphicStyle.softBorder,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide(
-                              color: NeumorphicStyle.primaryBlue,
-                              width: 2,
-                            ),
-                          ),
-                          filled: true,
-                          fillColor: NeumorphicStyle.surfaceBlue,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
-                        ),
-                        style: NeumorphicStyle.neumorphicText(
-                          fontSize: 16,
-                          color: NeumorphicStyle.darkText,
-                        ),
-                        validator: (value) {
-                          final n = double.tryParse(value ?? '');
-                          if (n == null || n < 100 || n > 10000) return 'Enter a valid goal (100-10000 ml)';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.pop(context),
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                  color: NeumorphicStyle.softBorder,
-                                  width: 1.5,
-                                ),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: Text(
-                                'Cancel',
-                                style: NeumorphicStyle.neumorphicText(
-                                  fontSize: 16,
-                                  color: NeumorphicStyle.lightText,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () async {
-                                if (user != null) {
-                                  await ref.read(currentUserProvider.notifier).updateUser(
-                                    user.copyWith(customGoal: null),
-                                  );
-                                  Navigator.pop(context);
-                                }
-                              },
-                              style: OutlinedButton.styleFrom(
-                                side: BorderSide(
-                                  color: NeumorphicStyle.primaryBlue.withOpacity(0.5),
-                                  width: 1.5,
-                                ),
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                              ),
-                              child: Text(
-                                'Reset (${recommendedGoal.toInt()} ml)',
-                                style: NeumorphicStyle.neumorphicText(
-                                  fontSize: 14,
-                                  color: NeumorphicStyle.primaryBlue,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF4FC3F7), Color(0xFF2196F3)],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF2196F3).withOpacity(0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            if (formKey.currentState!.validate() && user != null) {
-                              final newGoal = double.parse(controller.text);
-                              await ref.read(currentUserProvider.notifier).updateUser(
-                                user.copyWith(customGoal: newGoal),
-                              );
-                              Navigator.pop(context);
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: const Text(
-                            'Save',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   String _getActivityDescription(ActivityLevel level) {
     switch (level) {
       case ActivityLevel.sedentary:
@@ -1926,7 +1237,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         return 'Very hard exercise, physical job';
     }
   }
-  
+
   // Bottom navigation bar has been moved to the dashboard screen
 
   void _showNoAdsDialog(BuildContext context) {
@@ -1934,7 +1245,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
@@ -2038,10 +1350,16 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      _buildFeatureItem(Icons.block, 'No Banner Ads', 'Remove all banner advertisements'),
-                      _buildFeatureItem(Icons.fullscreen_exit, 'No Interstitial Ads', 'No full-screen ad interruptions'),
-                      _buildFeatureItem(Icons.speed, 'Faster Experience', 'Smoother app performance'),
-                      _buildFeatureItem(Icons.favorite, 'Support Development', 'Help us continue improving the app'),
+                      _buildFeatureItem(Icons.block, 'No Banner Ads',
+                          'Remove all banner advertisements'),
+                      _buildFeatureItem(
+                          Icons.fullscreen_exit,
+                          'No Interstitial Ads',
+                          'No full-screen ad interruptions'),
+                      _buildFeatureItem(Icons.speed, 'Faster Experience',
+                          'Smoother app performance'),
+                      _buildFeatureItem(Icons.favorite, 'Support Development',
+                          'Help us continue improving the app'),
                     ],
                   ),
                 ),
@@ -2088,7 +1406,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFFFC107).withOpacity(0.3),
+                                  color:
+                                      const Color(0xFFFFC107).withOpacity(0.3),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -2097,16 +1416,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             child: ElevatedButton.icon(
                               onPressed: () {
                                 Navigator.pop(context);
-                                // TODO: Implement payment logic here
-                                // For now, just show a message
+                                // Placeholder until payment integration is wired in.
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content: Text('Payment integration coming soon!'),
+                                    content: Text(
+                                        'Payment integration coming soon!'),
                                     duration: Duration(seconds: 2),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.block, color: Colors.white, size: 20),
+                              icon: const Icon(Icons.block,
+                                  color: Colors.white, size: 20),
                               label: const Text(
                                 'Remove Ads',
                                 style: TextStyle(
@@ -2118,7 +1438,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.transparent,
                                 shadowColor: Colors.transparent,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -2212,12 +1533,287 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     );
   }
 
-  void _showLogoutDialog() {
+  Widget _buildLegalSection() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: NeumorphicStyle.primaryBlue.withOpacity(0.08),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildLegalRow(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy Policy',
+            onTap: () => _launchUrl(AppUrls.privacyPolicyUrl),
+          ),
+          Divider(height: 1, indent: 20, endIndent: 20, color: NeumorphicStyle.softBorder),
+          _buildLegalRow(
+            icon: Icons.description_outlined,
+            title: 'Terms of Service',
+            onTap: () => _launchUrl(AppUrls.termsOfServiceUrl),
+          ),
+          Divider(height: 1, indent: 20, endIndent: 20, color: NeumorphicStyle.softBorder),
+          _buildLegalRow(
+            icon: Icons.delete_outline,
+            title: 'Delete Account',
+            titleColor: const Color(0xFFE53935),
+            iconColor: const Color(0xFFE53935),
+            onTap: _showDeleteAccountDialog,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegalRow({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    Color? titleColor,
+    Color? iconColor,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: iconColor ?? NeumorphicStyle.lightText),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: titleColor ?? NeumorphicStyle.darkText,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 20, color: NeumorphicStyle.lightText),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the link')),
+        );
+      }
+    }
+  }
+
+  void _showDeleteAccountDialog() {
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (context) => Dialog(
         insetPadding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          decoration: BoxDecoration(
+            color: NeumorphicStyle.backgroundBlue,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFFE53935).withOpacity(0.1),
+                      Colors.transparent,
+                    ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(28),
+                    topRight: Radius.circular(28),
+                  ),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFEF5350), Color(0xFFE53935)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE53935).withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.delete_forever_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Delete Account',
+                      style: NeumorphicStyle.neumorphicText(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'This will permanently delete your account and all hydration data. This action cannot be undone.',
+                      textAlign: TextAlign.center,
+                      style: NeumorphicStyle.neumorphicText(
+                        fontSize: 14,
+                        color: NeumorphicStyle.lightText,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: NeumorphicStyle.softBorder,
+                                width: 1.5,
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: NeumorphicStyle.neumorphicText(
+                                fontSize: 16,
+                                color: NeumorphicStyle.lightText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFEF5350), Color(0xFFE53935)],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFE53935).withOpacity(0.3),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                Navigator.pop(context);
+                                final result = await ref
+                                    .read(authProvider.notifier)
+                                    .deleteAccount();
+                                if (mounted && !result.success) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        result.message ??
+                                            'Failed to delete account',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              child: const Text(
+                                'Delete',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showLogoutDialog() {
+    if (!AppCapabilities.authEnabled) {
+      return;
+    }
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => Dialog(
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 20.0, vertical: 20.0),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(28),
         ),
@@ -2346,7 +1942,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFFE53935).withOpacity(0.3),
+                                  color:
+                                      const Color(0xFFE53935).withOpacity(0.3),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
                                 ),
@@ -2360,7 +1957,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.transparent,
                                 shadowColor: Colors.transparent,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -2377,27 +1975,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 12),
-                    // Developer option - smaller and less prominent
-                    TextButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        // Reset introduction screen for testing
-                        await ref.read(introductionSeenProvider.notifier).reset();
-                        await ref.read(authProvider.notifier).logout();
-                      },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        foregroundColor: NeumorphicStyle.lightText,
-                      ),
-                      child: Text(
-                        'Logout & Reset Intro (Dev)',
-                        style: NeumorphicStyle.neumorphicText(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                     ),
                   ],
                 ),

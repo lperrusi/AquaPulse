@@ -1,6 +1,7 @@
 /// Reminder Model
 ///
 /// Defines the Reminder data model for hydration notifications, including time, days, and active state.
+library;
 
 import 'package:flutter/material.dart';
 

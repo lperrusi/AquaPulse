@@ -435,7 +435,7 @@ class DatabaseService {
       'reminders',
       where: 'userId = ?',
       whereArgs: [userId],
-      orderBy: 'time ASC',
+      orderBy: 'time_hour ASC, time_minute ASC',
     );
 
     return maps.map((map) => Reminder.fromJson(map)).toList();
@@ -548,6 +548,15 @@ class DatabaseService {
 
   Future<void> deleteUser(String userId) async {
     final db = await database;
+    await db.delete('users', where: 'id = ?', whereArgs: [userId]);
+  }
+
+  Future<void> deleteAllUserData(String userId) async {
+    final db = await database;
+    await db.delete('water_intake', where: 'userId = ?', whereArgs: [userId]);
+    await db.delete('daily_water_goals', where: 'userId = ?', whereArgs: [userId]);
+    await db.delete('reminders', where: 'userId = ?', whereArgs: [userId]);
+    await db.delete('streaks', where: 'userId = ?', whereArgs: [userId]);
     await db.delete('users', where: 'id = ?', whereArgs: [userId]);
   }
 

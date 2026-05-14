@@ -1,0 +1,27 @@
+---
+description: Domain-layer standards for services, models, and providers
+globs: "{lib/services/**,lib/models/**,lib/providers/**}"
+alwaysApply: false
+---
+
+# Flutter Domain Standards
+
+- Keep services single-purpose and side-effect scoped; one service should own one domain concern.
+- Providers should orchestrate dependencies, not duplicate service internals.
+- Keep models as plain data structures with validation/serialization concerns only.
+- Do not leak UI concepts (BuildContext, widgets, navigation) into services/models/providers.
+- Fail predictably: return typed results or throw meaningful exceptions, never swallow errors silently.
+- Avoid source-level secrets and environment-specific constants in domain code; prefer runtime config.
+- Add/update focused tests when touching behavior in these paths.
+
+## Quick Example
+
+```dart
+// BAD: UI concern in service
+Future<void> save(BuildContext context) async { ... }
+```
+
+```dart
+// GOOD: UI-agnostic domain API
+Future<SaveResult> save(ProfileData input) async { ... }
+```

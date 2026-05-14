@@ -2,6 +2,7 @@
 ///
 /// Toast component for showing notifications with progress bar animation.
 /// Matches Figma design exactly.
+library;
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -85,7 +86,7 @@ class _NotificationToastState extends State<NotificationToast>
     _progressTimer?.cancel();
     const duration = Duration(seconds: 5);
     const interval = Duration(milliseconds: 50);
-    const decrement = 100.0 / (duration.inMilliseconds / interval.inMilliseconds);
+    final decrement = 100.0 / (duration.inMilliseconds / interval.inMilliseconds);
 
     _progressTimer = Timer.periodic(interval, (timer) {
       if (mounted) {
@@ -138,7 +139,7 @@ class _NotificationToastState extends State<NotificationToast>
                 borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: NeumorphicStyle.primaryBlue.withOpacity(0.2),
+                    color: NeumorphicStyle.primaryBlue.withValues(alpha: 0.2),
                     blurRadius: 40,
                     offset: const Offset(0, 10),
                   ),

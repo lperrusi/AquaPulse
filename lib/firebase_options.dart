@@ -47,6 +47,7 @@ class DefaultFirebaseOptions {
     projectId: 'hydration-tracker-app-2024',
     authDomain: 'hydration-tracker-app-2024.firebaseapp.com',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
+    measurementId: 'G-W9DZ6HBGSG',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
@@ -63,6 +64,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '285299670930',
     projectId: 'hydration-tracker-app-2024',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
+    iosClientId: '285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com',
     iosBundleId: 'com.example.hydrationTracker',
   );
 
@@ -72,6 +74,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '285299670930',
     projectId: 'hydration-tracker-app-2024',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
+    iosClientId: '285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com',
     iosBundleId: 'com.example.hydrationTracker',
   );
 
@@ -82,5 +85,7 @@ class DefaultFirebaseOptions {
     projectId: 'hydration-tracker-app-2024',
     authDomain: 'hydration-tracker-app-2024.firebaseapp.com',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
+    measurementId: 'G-YSG4L5MMZM',
   );
+
 }

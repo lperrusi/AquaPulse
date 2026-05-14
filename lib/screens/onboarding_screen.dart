@@ -2,8 +2,11 @@
 ///
 /// Modern onboarding screen with clean design, progress indicator, and intuitive form layout.
 /// Captures user profile information and creates local user account.
+// ignore_for_file: deprecated_member_use
+library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/user.dart';
 import '../providers/app_providers.dart';
@@ -11,7 +14,6 @@ import '../utils/neumorphic_style.dart';
 import '../services/notification_service.dart';
 import 'notification_permission_screen.dart';
 import 'package:uuid/uuid.dart';
-import 'dashboard_screen.dart';
 import '../main.dart';
 
 /// The main OnboardingScreen widget with modern design
@@ -29,7 +31,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   final _weightController = TextEditingController(text: '70');
   final _ageFocusNode = FocusNode();
   final _weightFocusNode = FocusNode();
-  
+
   String _selectedGender = 'M';
   String _selectedWeightUnit = 'kg';
   ActivityLevel _selectedActivityLevel = ActivityLevel.lightlyActive;
@@ -60,7 +62,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               children: [
                 // Header Section
                 _buildHeader(),
-                
+
                 // Form Content
                 Expanded(
                   child: SingleChildScrollView(
@@ -69,26 +71,27 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 40),
-                        
+
                         // Age and Gender Section
                         _buildAgeGenderSection(),
-                        
+
                         const SizedBox(height: 32),
-                        
+
                         // Weight Section
                         _buildWeightSection(),
-                        
+
                         const SizedBox(height: 32),
-                        
+
                         // Activity Level Section
                         _buildActivityLevelSection(),
-                        
+
                         const SizedBox(height: 48),
-                        
+
                         // Continue Button
                         _buildContinueButton(),
-                        
-                        const SizedBox(height: 100), // Extra bottom padding for keyboard
+
+                        const SizedBox(
+                            height: 100), // Extra bottom padding for keyboard
                       ],
                     ),
                   ),
@@ -137,9 +140,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Progress Indicator
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -176,9 +179,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 24),
-          
+
           // Title - matches Figma: text-3xl = 30px, font-bold
           Text(
             'TELL US ABOUT YOURSELF',
@@ -213,6 +216,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 controller: _ageController,
                 focusNode: _ageFocusNode,
                 keyboardType: TextInputType.number,
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.digitsOnly,
+                ],
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) {
                   FocusScope.of(context).unfocus();
@@ -230,9 +236,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF2196F3), width: 2),
+                    borderSide:
+                        const BorderSide(color: Color(0xFF2196F3), width: 2),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
                 style: const TextStyle(
                   fontSize: 16,
@@ -272,13 +280,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? NeumorphicStyle.primaryGradient()
-              : null,
+          gradient: isSelected ? NeumorphicStyle.primaryGradient() : null,
           color: isSelected ? null : Colors.white,
           borderRadius: BorderRadius.circular(25), // rounded-[25px]
           border: Border.all(
-            color: isSelected ? Colors.transparent : NeumorphicStyle.primaryBlue,
+            color:
+                isSelected ? Colors.transparent : NeumorphicStyle.primaryBlue,
             width: 2, // border-2 = 2px
           ),
         ),
@@ -313,7 +320,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               child: TextFormField(
                 controller: _weightController,
                 focusNode: _weightFocusNode,
-                keyboardType: TextInputType.number,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: <TextInputFormatter>[
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,1}$')),
+                ],
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) {
                   FocusScope.of(context).unfocus();
@@ -357,10 +368,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       FocusScope.of(context).unfocus();
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                       decoration: BoxDecoration(
-                        color: _selectedWeightUnit == 'kg' 
-                            ? NeumorphicStyle.primaryBlue 
+                        color: _selectedWeightUnit == 'kg'
+                            ? NeumorphicStyle.primaryBlue
                             : Colors.white,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(12),
@@ -372,8 +384,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: _selectedWeightUnit == 'kg' 
-                              ? Colors.white 
+                          color: _selectedWeightUnit == 'kg'
+                              ? Colors.white
                               : NeumorphicStyle.lightText,
                         ),
                       ),
@@ -386,10 +398,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                       FocusScope.of(context).unfocus();
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                       decoration: BoxDecoration(
-                        color: _selectedWeightUnit == 'lbs' 
-                            ? NeumorphicStyle.primaryBlue 
+                        color: _selectedWeightUnit == 'lbs'
+                            ? NeumorphicStyle.primaryBlue
                             : Colors.white,
                         borderRadius: const BorderRadius.only(
                           topRight: Radius.circular(12),
@@ -401,8 +414,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: _selectedWeightUnit == 'lbs' 
-                              ? Colors.white 
+                          color: _selectedWeightUnit == 'lbs'
+                              ? Colors.white
                               : NeumorphicStyle.lightText,
                         ),
                       ),
@@ -491,7 +504,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       builder: (context) => Container(
         decoration: BoxDecoration(
           color: Colors.white, // bg-white in Figma
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)), // rounded-t-[24px]
+          borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(24)), // rounded-t-[24px]
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -502,12 +516,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: NeumorphicStyle.lightText.withOpacity(0.3), // bg-gray-300
+                color:
+                    NeumorphicStyle.lightText.withOpacity(0.3), // bg-gray-300
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 24), // mb-6 = 24px
-            
+
             // Title - matches Figma: text-xl font-bold
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -520,12 +535,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               ),
             ),
             const SizedBox(height: 16), // mb-4 = 16px
-            
+
             // Activity options
             Flexible(
               child: SingleChildScrollView(
                 child: Column(
-                  children: ActivityLevel.values.map((level) => _buildActivityMenuItem(level)).toList(),
+                  children: ActivityLevel.values
+                      .map((level) => _buildActivityMenuItem(level))
+                      .toList(),
                 ),
               ),
             ),
@@ -552,12 +569,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         });
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), // space-y-3 = 12px, but we use 4px margin
+        margin: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 4), // space-y-3 = 12px, but we use 4px margin
         padding: const EdgeInsets.all(16), // p-4 = 16px
         decoration: BoxDecoration(
-          gradient: isSelected
-              ? NeumorphicStyle.primaryGradient()
-              : null,
+          gradient: isSelected ? NeumorphicStyle.primaryGradient() : null,
           color: isSelected ? null : Colors.white,
           borderRadius: BorderRadius.circular(12), // rounded-xl = 12px
           border: Border.all(
@@ -582,14 +599,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600, // font-semibold
-                      color: isSelected ? Colors.white : NeumorphicStyle.darkText,
+                      color:
+                          isSelected ? Colors.white : NeumorphicStyle.darkText,
                     ),
                   ),
                   Text(
                     _getActivityDescription(level),
                     style: TextStyle(
                       fontSize: 14, // text-sm = 14px
-                      color: isSelected ? Colors.white.withOpacity(0.8) : NeumorphicStyle.lightText,
+                      color: isSelected
+                          ? Colors.white.withOpacity(0.8)
+                          : NeumorphicStyle.lightText,
                     ),
                   ),
                 ],
@@ -670,9 +690,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget _buildContinueButton() {
     final isValid = _ageController.text.isNotEmpty &&
         _selectedGender.isNotEmpty &&
-        _weightController.text.isNotEmpty &&
-        _selectedActivityLevel != null;
-    
+        _weightController.text.isNotEmpty;
+
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
@@ -799,4 +818,4 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       }
     }
   }
-} 
+}

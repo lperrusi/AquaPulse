@@ -2,6 +2,7 @@
 ///
 /// Provides user registration with comprehensive form validation,
 /// profile setup, and navigation to login after successful registration.
+// ignore_for_file: deprecated_member_use, use_build_context_synchronously, unused_field
 library;
 
 import 'package:flutter/material.dart';
@@ -583,9 +584,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     });
     try {
       final result = await ref.read(authProvider.notifier).loginWithGoogle();
-      if (!result.success)
+      if (!result.success) {
         setState(
             () => _errorMessage = result.message ?? 'Google sign-in failed');
+      }
     } catch (e) {
       setState(() => _errorMessage = 'An error occurred during sign-in');
     } finally {

@@ -2,6 +2,8 @@
 ///
 /// Displays current weather information and weather-based hydration adjustments.
 /// Shows temperature, humidity, location, and weather-based hydration tips.
+// ignore_for_file: deprecated_member_use, unused_element
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -64,6 +66,16 @@ class WeatherCard extends ConsumerWidget {
                       ),
                     ],
                   ),
+                ),
+                IconButton(
+                  onPressed: () =>
+                      ref.read(weatherProvider.notifier).refreshWeather(),
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  tooltip: 'Retry weather',
                 ),
                 IconButton(
                   onPressed: () => _openWeatherSettings(context),

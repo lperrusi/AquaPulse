@@ -1,0 +1,53 @@
+---
+description: Flutter UI standards for screens and widgets
+alwaysApply: true
+---
+
+# Flutter UI Standards (Screens and Widgets)
+
+- Prefer `ConsumerWidget`; use `ConsumerStatefulWidget` only for local ephemeral UI state (controllers, focus, animation, temporary toggles).
+- Keep `build` pure: no direct navigation, dialogs, or provider mutations inside `build`.
+- Standardize async states as `loading`, `error`, and `content` with visible user feedback for failures.
+- Use one navigation style per flow and avoid scattering route decisions across multiple widget layers.
+- Keep screens as orchestrators: delegate business rules and data transformations to providers/services.
+- Use shared design tokens from `NeumorphicStyle`/theme; avoid one-off visual constants in feature widgets.
+- Favor composable private UI sections or reusable widgets when a screen becomes large and repetitive.
+
+## Examples
+
+```dart
+// BAD: side effect in build
+@override
+Widget build(BuildContext context) {
+  if (isLoggedIn) {
+    Navigator.pushReplacement(...);
+  }
+  return const SizedBox.shrink();
+}
+```
+
+```dart
+// GOOD: side effect from lifecycle/listener with guard
+@override
+void initState() {
+  super.initState();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    if (isLoggedIn) Navigator.pushReplacement(...);
+  });
+}
+```
+
+```dart
+// GOOD: mounted check after await before UI side effects
+Future<void> submit() async {
+  setState(() => _isLoading = true);
+  try {
+    await ref.read(authProvider).signIn();
+    if (!mounted) return;
+    Navigator.pushReplacement(...);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
+```

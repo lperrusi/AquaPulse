@@ -8,8 +8,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hydration_tracker/models/user.dart';
 import 'package:hydration_tracker/providers/app_providers.dart';
-import 'package:hydration_tracker/services/database_service.dart';
-import 'package:hydration_tracker/services/firebase_service.dart';
 import 'package:mockito/mockito.dart';
 import 'test_helpers.dart';
 import 'test_helpers.mocks.dart';

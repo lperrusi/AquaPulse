@@ -1,14 +1,14 @@
 /// Reminder Provider Tests
 ///
 /// Tests for the RemindersNotifier provider, covering CRUD operations and state management.
+library;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mockito/mockito.dart';
-import 'package:hydration_tracker/providers/app_providers.dart';
 import 'package:hydration_tracker/models/reminder.dart';
-import 'package:hydration_tracker/services/database_service.dart';
-import 'package:hydration_tracker/services/notification_service.dart';
+import 'package:hydration_tracker/providers/app_providers.dart';
 import 'test_helpers.dart';
 import 'test_helpers.mocks.dart';
 
@@ -20,10 +20,10 @@ void main() {
 
     setUp(() {
       TestHelpers.setupTestEnvironment();
-      
+
       mockDatabaseService = TestHelpers.createMockDatabaseService();
       mockNotificationService = TestHelpers.createMockNotificationService();
-      
+
       container = TestHelpers.createTestContainer(
         mockDatabase: mockDatabaseService,
         mockNotification: mockNotificationService,
@@ -81,7 +81,7 @@ void main() {
         // Wait for initialization
         await Future.delayed(const Duration(milliseconds: 100));
 
-        final error = container.read(remindersErrorProvider);
+        final _ = container.read(remindersErrorProvider);
         // Note: Error handling may vary - check if error is set or state is empty
         expect(container.read(remindersProvider), isEmpty);
       });
@@ -94,8 +94,7 @@ void main() {
           title: 'New Reminder',
         );
 
-        when(mockDatabaseService.addReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [reminder]);
         when(mockNotificationService.scheduleReminder(any))
@@ -113,22 +112,54 @@ void main() {
 
       test('should handle add reminder error', () async {
         final reminder = TestData.createTestReminder();
-        
+
         when(mockDatabaseService.addReminder(any))
             .thenThrow(Exception('Add error'));
 
         // Expect the exception to be thrown
         expect(
-          () => container.read(remindersProvider.notifier).addReminder(reminder),
+          () =>
+              container.read(remindersProvider.notifier).addReminder(reminder),
           throwsException,
         );
 
         // Wait for async operations
         await Future.delayed(const Duration(milliseconds: 100));
-        
+
         final error = container.read(remindersErrorProvider);
         // Error may be set in the notifier's error field
         expect(error != null || true, isTrue); // Error handling may vary
+      });
+
+      test('should persist interval reminder with custom minutes', () async {
+        const intervalReminder = Reminder(
+          id: 'interval_reminder',
+          userId: 'test_user',
+          title: 'Interval Reminder',
+          message: 'Drink water',
+          time: TimeOfDay(hour: 8, minute: 0),
+          daysOfWeek: [1, 2, 3, 4, 5, 6, 7],
+          isInterval: true,
+          intervalMinutes: 45,
+          startTime: TimeOfDay(hour: 8, minute: 0),
+          endTime: TimeOfDay(hour: 20, minute: 0),
+        );
+
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
+        when(mockDatabaseService.getAllReminders())
+            .thenAnswer((_) async => [intervalReminder]);
+        when(mockNotificationService.scheduleReminder(any))
+            .thenAnswer((_) async {});
+
+        await container
+            .read(remindersProvider.notifier)
+            .addReminder(intervalReminder);
+
+        final captured =
+            verify(mockDatabaseService.addReminder(captureAny)).captured.single;
+        expect(captured, isNotNull);
+        expect(captured.isInterval, isTrue);
+        expect(captured.intervalMinutes, 45);
       });
     });
 
@@ -143,18 +174,18 @@ void main() {
         );
 
         // Add the original reminder first
-        when(mockDatabaseService.addReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [originalReminder]);
         when(mockNotificationService.scheduleReminder(any))
             .thenAnswer((_) async {});
-        
-        await container.read(remindersProvider.notifier).addReminder(originalReminder);
+
+        await container
+            .read(remindersProvider.notifier)
+            .addReminder(originalReminder);
 
         // Now update it
-        when(mockDatabaseService.updateReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.updateReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [updatedReminder]);
         when(mockNotificationService.cancelReminder(any))
@@ -163,7 +194,9 @@ void main() {
             .thenAnswer((_) async {});
 
         try {
-          await container.read(remindersProvider.notifier).updateReminder(updatedReminder);
+          await container
+              .read(remindersProvider.notifier)
+              .updateReminder(updatedReminder);
         } catch (e) {
           // Notification service may fail in tests due to platform channels
           // This is expected and doesn't affect the core functionality test
@@ -184,24 +217,23 @@ void main() {
         final reminder = TestData.createTestReminder(id: 'delete_reminder');
 
         // Add the reminder first
-        when(mockDatabaseService.addReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [reminder]);
         when(mockNotificationService.scheduleReminder(any))
             .thenAnswer((_) async {});
-        
+
         await container.read(remindersProvider.notifier).addReminder(reminder);
 
         // Now delete it
-        when(mockDatabaseService.deleteReminder(any))
-            .thenAnswer((_) async {});
-        when(mockDatabaseService.getAllReminders())
-            .thenAnswer((_) async => []);
+        when(mockDatabaseService.deleteReminder(any)).thenAnswer((_) async {});
+        when(mockDatabaseService.getAllReminders()).thenAnswer((_) async => []);
         when(mockNotificationService.cancelReminder(any))
             .thenAnswer((_) async {});
 
-        await container.read(remindersProvider.notifier).deleteReminder(reminder.id);
+        await container
+            .read(remindersProvider.notifier)
+            .deleteReminder(reminder.id);
 
         verify(mockDatabaseService.deleteReminder(reminder.id)).called(1);
         // cancelReminder is called internally if needed
@@ -219,26 +251,26 @@ void main() {
         );
 
         // Add the reminder first
-        when(mockDatabaseService.addReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [reminder]);
         when(mockNotificationService.scheduleReminder(any))
             .thenAnswer((_) async {});
-        
+
         await container.read(remindersProvider.notifier).addReminder(reminder);
 
         // Now toggle it
         final toggledReminder = reminder.copyWith(isActive: false);
-        when(mockDatabaseService.updateReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.updateReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [toggledReminder]);
         when(mockNotificationService.cancelReminder(any))
             .thenAnswer((_) async {});
 
         try {
-          await container.read(remindersProvider.notifier).toggleReminder(reminder.id);
+          await container
+              .read(remindersProvider.notifier)
+              .toggleReminder(reminder.id);
         } catch (e) {
           // Notification service may fail in tests due to platform channels
           // This is expected and doesn't affect the core functionality test
@@ -258,24 +290,25 @@ void main() {
 
         // Wait for initialization
         await Future.delayed(const Duration(milliseconds: 100));
-        
+
         // Error may be set or state may be empty
         final reminders = container.read(remindersProvider);
         expect(reminders, isEmpty);
 
         // Then, make it succeed by adding a reminder
-        when(mockDatabaseService.addReminder(any))
-            .thenAnswer((_) async {});
+        when(mockDatabaseService.addReminder(any)).thenAnswer((_) async {});
         when(mockDatabaseService.getAllReminders())
             .thenAnswer((_) async => [TestData.createTestReminder()]);
         when(mockNotificationService.scheduleReminder(any))
             .thenAnswer((_) async {});
 
-        await container.read(remindersProvider.notifier).addReminder(TestData.createTestReminder());
-        
+        await container
+            .read(remindersProvider.notifier)
+            .addReminder(TestData.createTestReminder());
+
         final updatedReminders = container.read(remindersProvider);
         expect(updatedReminders, isNotEmpty);
       });
     });
   });
-} 
+}

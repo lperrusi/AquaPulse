@@ -95,8 +95,6 @@ class TestHelpers {
   }) {
     final database = mockDatabase ?? createMockDatabaseService();
     final notification = mockNotification ?? createMockNotificationService();
-    final weather = mockWeather ?? createMockWeatherService();
-    final firebase = mockFirebase ?? createMockFirebaseService();
 
     return ProviderContainer(
       overrides: [

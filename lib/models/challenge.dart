@@ -2,6 +2,7 @@
 ///
 /// Defines challenge and competition models for friend challenges and leaderboards.
 /// Handles different types of challenges, progress tracking, and results.
+library;
 
 enum ChallengeType {
   dailyGoal,      // Daily goal completion challenge

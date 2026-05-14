@@ -2,12 +2,11 @@
 ///
 /// Displays a list of today's water intake entries, or an empty state if none exist.
 /// Used on the dashboard to show recent hydration activity.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/water_intake.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/app_providers.dart';
 import '../utils/neumorphic_style.dart';
 
 /// Widget that displays a list of recent water intakes for today, or an empty state.

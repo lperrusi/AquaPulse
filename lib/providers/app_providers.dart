@@ -67,7 +67,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   StreamSubscription? _authStateSubscription;
 
   AuthNotifier(this._authService, this._ref) : super(AuthState.initial) {
-    _initializeAuth();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    await _initializeAuth();
     _setupAuthStateListener();
   }
 
@@ -108,8 +112,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
           // User is signed out
           if (state != AuthState.unauthenticated) {
             state = AuthState.unauthenticated;
-            // Clear user from provider
-            _ref.read(currentUserProvider.notifier).clearUser();
           }
         }
       },
@@ -291,6 +293,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  Future<AuthResult> deleteAccount() async {
+    try {
+      state = AuthState.loading;
+      _ref.read(currentUserProvider.notifier).clearUser();
+      final result = await _authService.deleteAccount();
+      state = AuthState.unauthenticated;
+      return result;
+    } catch (e) {
+      state = AuthState.unauthenticated;
+      return AuthResult(
+          success: false, message: 'Failed to delete account: $e');
+    }
+  }
+
   Future<AuthResult> changePassword(
       String currentPassword, String newPassword) async {
     try {
@@ -308,13 +324,53 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<AuthResult> forgotPassword(String email) async {
+    return requestPasswordResetCode(email);
+  }
+
+  Future<AuthResult> requestPasswordResetCode(String email) async {
     try {
-      final result = await _authService.forgotPassword(email);
+      final result = await _authService.requestPasswordResetCode(email);
       return result;
     } catch (e) {
       return AuthResult(
         success: false,
-        message: 'Forgot password failed: ${e.toString()}',
+        message: 'Request verification code failed: ${e.toString()}',
+      );
+    }
+  }
+
+  Future<AuthResult> verifyPasswordResetCode({
+    required String email,
+    required String code,
+  }) async {
+    try {
+      return await _authService.verifyPasswordResetCode(
+        email: email,
+        code: code,
+      );
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        message: 'Code verification failed: ${e.toString()}',
+      );
+    }
+  }
+
+  Future<AuthResult> confirmPasswordResetWithCode({
+    required String email,
+    required String resetSessionToken,
+    required String newPassword,
+  }) async {
+    try {
+      return await _authService.confirmPasswordResetWithCode(
+        email: email,
+        resetSessionToken: resetSessionToken,
+        newPassword: newPassword,
+      );
+    } catch (e) {
+      return AuthResult(
+        success: false,
+        message: 'Password reset failed: ${e.toString()}',
       );
     }
   }
@@ -352,16 +408,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
 class UserNotifier extends StateNotifier<User?> {
   final DatabaseService _databaseService;
   final FirebaseService _firebaseService;
+  final Completer<void> _initialLoadCompleter = Completer<void>();
+
+  Future<void> get initialLoadDone => _initialLoadCompleter.future;
 
   UserNotifier(this._databaseService, this._firebaseService) : super(null) {
     _loadUser();
   }
 
   Future<void> _loadUser() async {
-    final user = await _databaseService.getCurrentUser();
-    debugPrint(
-        '[ProfilePersistence] _loadUser: got user from DB (id=${user?.id}, age=${user?.age}, gender=${user?.gender})');
-    state = user;
+    try {
+      final user = await _databaseService.getCurrentUser();
+      if (kDebugMode) {
+        debugPrint('[ProfilePersistence] _loadUser: loaded current user from DB');
+      }
+      state = user;
+    } finally {
+      if (!_initialLoadCompleter.isCompleted) {
+        _initialLoadCompleter.complete();
+      }
+    }
   }
 
   Future<void> createUser(User user) async {
@@ -375,8 +441,9 @@ class UserNotifier extends StateNotifier<User?> {
   /// Sets the current user from auth (e.g. after app start when Firebase is already signed in).
   /// Persists current user id so getCurrentUser() returns this user next time.
   Future<void> setUserFromAuth(User user) async {
-    debugPrint(
-        '[ProfilePersistence] setUserFromAuth: loading user from auth (id=${user.id}, age=${user.age}, gender=${user.gender})');
+    if (kDebugMode) {
+      debugPrint('[ProfilePersistence] setUserFromAuth: syncing auth user');
+    }
     await _databaseService.setCurrentUserId(user.id);
     state = user;
   }
@@ -417,18 +484,34 @@ class UserNotifier extends StateNotifier<User?> {
   }
 
   Future<void> updateUser(User user) async {
-    debugPrint(
-        '[ProfilePersistence] updateUser: saving to local DB (id=${user.id}, age=${user.age}, gender=${user.gender})');
+    if (kDebugMode) {
+      debugPrint('[ProfilePersistence] updateUser: saving local profile');
+    }
     await _databaseService.updateUser(user);
     // Sync to Firestore when signed in so age/gender etc. persist across app restarts
     if (_firebaseService.currentUser != null) {
-      debugPrint(
-          '[ProfilePersistence] updateUser: syncing to Firestore (age=${user.age}, gender=${user.gender})');
-      await _firebaseService.createOrUpdateUser(user);
-      debugPrint('[ProfilePersistence] updateUser: Firestore sync done');
+      if (kDebugMode) {
+        debugPrint('[ProfilePersistence] updateUser: syncing to Firestore');
+      }
+      try {
+        await _firebaseService
+            .createOrUpdateUser(user)
+            .timeout(const Duration(seconds: 5));
+        if (kDebugMode) {
+          debugPrint('[ProfilePersistence] updateUser: Firestore sync done');
+        }
+      } catch (e) {
+        // Never block profile updates if cloud sync is unavailable.
+        if (kDebugMode) {
+          debugPrint(
+              '[ProfilePersistence] updateUser: Firestore sync skipped/failure: $e');
+        }
+      }
     } else {
-      debugPrint(
-          '[ProfilePersistence] updateUser: skipped Firestore (not signed in)');
+      if (kDebugMode) {
+        debugPrint(
+            '[ProfilePersistence] updateUser: skipped Firestore (not signed in)');
+      }
     }
     state = user;
   }
@@ -464,13 +547,8 @@ class WaterIntakeNotifier extends StateNotifier<List<WaterIntake>> {
   /// Checks if a new day has started and resets the tracked intake if so.
   Future<void> _checkAndResetForNewDay() async {
     final prefs = await SharedPreferences.getInstance();
-    final lastOpenedDateStr = prefs.getString('lastOpenedDate');
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    DateTime? lastOpenedDate;
-    if (lastOpenedDateStr != null) {
-      lastOpenedDate = DateTime.tryParse(lastOpenedDateStr);
-    }
     // Always load today's intakes (not all intakes)
     // If it's a new day, the data will be empty anyway
     await _loadTodaysIntakes();
@@ -511,16 +589,6 @@ class WaterIntakeNotifier extends StateNotifier<List<WaterIntake>> {
     final prefs = await SharedPreferences.getInstance();
     await _loadTodaysIntakes();
     await prefs.setString('lastOpenedDate', today.toIso8601String());
-  }
-
-  Future<void> _loadIntakes() async {
-    final user = _ref.read(currentUserProvider);
-    if (user != null) {
-      final intakes = await _databaseService.getAllWaterIntakesForUser(user.id);
-      state = intakes;
-    } else {
-      state = [];
-    }
   }
 
   Future<void> _loadTodaysIntakes() async {
@@ -589,14 +657,19 @@ final dailyGoalProvider = Provider<double>((ref) {
 /// Provides the list of reminders and handles reminder CRUD operations.
 final remindersProvider =
     StateNotifierProvider<RemindersNotifier, List<Reminder>>((ref) {
-  return RemindersNotifier(ref.read(databaseServiceProvider));
+  return RemindersNotifier(
+    ref.read(databaseServiceProvider),
+    ref.read(notificationServiceProvider),
+  );
 });
 
 class RemindersNotifier extends StateNotifier<List<Reminder>> {
   final DatabaseService _databaseService;
+  final NotificationService _notificationService;
   String? error;
 
-  RemindersNotifier(this._databaseService) : super([]) {
+  RemindersNotifier(this._databaseService, this._notificationService)
+      : super([]) {
     _loadReminders();
     _rescheduleActiveReminders();
   }
@@ -614,11 +687,10 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
 
   Future<void> _rescheduleActiveReminders() async {
     try {
-      final notificationService = NotificationService();
       for (final reminder in state) {
         if (reminder.isActive) {
           try {
-            await notificationService.scheduleReminder(reminder);
+            await _notificationService.scheduleReminder(reminder);
             debugPrint(
                 'Provider: Rescheduled active reminder: ${reminder.title}');
           } catch (e) {
@@ -642,8 +714,7 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
 
       // Try to schedule notification, but don't fail if it doesn't work
       try {
-        final notificationService = NotificationService();
-        await notificationService.scheduleReminder(reminder);
+        await _notificationService.scheduleReminder(reminder);
         debugPrint('Provider: Notification scheduled successfully');
       } catch (notificationError) {
         debugPrint(
@@ -660,8 +731,7 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
   Future<void> updateReminder(Reminder reminder) async {
     try {
       // First, cancel the old notification if it exists
-      final notificationService = NotificationService();
-      await notificationService.cancelReminder(reminder);
+      await _notificationService.cancelReminder(reminder);
 
       // Update in database
       await _databaseService.updateReminder(reminder);
@@ -670,7 +740,7 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
       // Schedule the new notification if the reminder is active
       if (reminder.isActive) {
         try {
-          await notificationService.scheduleReminder(reminder);
+          await _notificationService.scheduleReminder(reminder);
           debugPrint(
               'Provider: Updated reminder notification scheduled successfully');
         } catch (notificationError) {
@@ -695,12 +765,10 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
       final reminder = state.firstWhere((r) => r.id == reminderId);
       final updatedReminder = reminder.copyWith(isActive: !reminder.isActive);
 
-      final notificationService = NotificationService();
-
       if (updatedReminder.isActive) {
         // If turning on, schedule the notification
         try {
-          await notificationService.scheduleReminder(updatedReminder);
+          await _notificationService.scheduleReminder(updatedReminder);
           debugPrint(
               'Provider: Toggled reminder notification scheduled successfully');
         } catch (notificationError) {
@@ -710,7 +778,7 @@ class RemindersNotifier extends StateNotifier<List<Reminder>> {
       } else {
         // If turning off, cancel the notification
         try {
-          await notificationService.cancelReminder(reminder);
+          await _notificationService.cancelReminder(reminder);
           debugPrint(
               'Provider: Toggled reminder notification cancelled successfully');
         } catch (notificationError) {
@@ -1287,6 +1355,10 @@ final introductionSeenProvider =
 
 /// State notifier for introduction screen tracking
 class IntroductionSeenNotifier extends StateNotifier<bool> {
+  final Completer<void> _initialLoadCompleter = Completer<void>();
+
+  Future<void> get initialLoadDone => _initialLoadCompleter.future;
+
   IntroductionSeenNotifier() : super(false) {
     _loadIntroductionSeen();
   }
@@ -1300,6 +1372,10 @@ class IntroductionSeenNotifier extends StateNotifier<bool> {
     } catch (e) {
       debugPrint('Error loading introduction seen status: $e');
       state = false;
+    } finally {
+      if (!_initialLoadCompleter.isCompleted) {
+        _initialLoadCompleter.complete();
+      }
     }
   }
 
@@ -1322,7 +1398,7 @@ class IntroductionSeenNotifier extends StateNotifier<bool> {
       debugPrint('Error resetting introduction seen status: $e');
     }
   }
-} 
+}
 
 // ==================== PREMIUM PROVIDER ====================
 

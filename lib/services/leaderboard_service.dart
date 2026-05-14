@@ -2,6 +2,7 @@
 ///
 /// Handles leaderboards, rankings, and competitive statistics.
 /// Manages different types of leaderboards and user rankings using Firebase.
+library;
 
 import 'package:flutter/foundation.dart';
 import '../models/leaderboard.dart';

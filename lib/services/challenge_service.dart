@@ -2,6 +2,7 @@
 ///
 /// Handles friend challenges, competitions, and challenge management.
 /// Manages challenge creation, participation, progress tracking, and results using Firebase.
+library;
 
 import 'package:flutter/foundation.dart';
 import '../models/challenge.dart';
@@ -257,9 +258,6 @@ class ChallengeService {
       case ChallengeType.custom:
         final customScore = progress['customScore'] as double? ?? 0.0;
         return customScore;
-
-      default:
-        return 0.0;
     }
   }
 

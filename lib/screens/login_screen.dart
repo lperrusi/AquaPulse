@@ -2,6 +2,7 @@
 ///
 /// Provides user authentication with email/password login, registration option,
 /// and forgot password functionality. Handles form validation and error display.
+// ignore_for_file: deprecated_member_use
 library;
 
 import 'package:flutter/material.dart';
@@ -10,7 +11,6 @@ import '../providers/app_providers.dart';
 import '../services/auth_service.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
-import 'dashboard_screen.dart';
 import '../main.dart';
 import '../utils/neumorphic_style.dart';
 

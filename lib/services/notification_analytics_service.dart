@@ -2,6 +2,7 @@
 ///
 /// Tracks user interaction patterns with notifications and optimizes notification timing.
 /// Analyzes when users are most likely to drink water and adjusts notification schedules accordingly.
+library;
 
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
