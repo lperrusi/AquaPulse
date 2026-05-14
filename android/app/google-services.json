@@ -31,10 +31,10 @@
               "client_type": 3
             },
             {
-              "client_id": "285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com",
+              "client_id": "285299670930-bbf152erdrkp3im8hrl4u49qo02ri5sd.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.example.hydrationTracker"
+                "bundle_id": "com.lucasperrusi.aquapulse"
               }
             }
           ]

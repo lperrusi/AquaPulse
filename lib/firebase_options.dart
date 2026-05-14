@@ -60,22 +60,22 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyD1RUwW-zLvLJD8NZCcWgJ20y3_kVPOL_s',
-    appId: '1:285299670930:ios:9fdbb91a1c2e1f9a560b4b',
+    appId: '1:285299670930:ios:78b2f6a38c1a909b560b4b',
     messagingSenderId: '285299670930',
     projectId: 'hydration-tracker-app-2024',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
-    iosClientId: '285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com',
-    iosBundleId: 'com.example.hydrationTracker',
+    iosClientId: '285299670930-bbf152erdrkp3im8hrl4u49qo02ri5sd.apps.googleusercontent.com',
+    iosBundleId: 'com.lucasperrusi.aquapulse',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyD1RUwW-zLvLJD8NZCcWgJ20y3_kVPOL_s',
-    appId: '1:285299670930:ios:9fdbb91a1c2e1f9a560b4b',
+    appId: '1:285299670930:ios:78b2f6a38c1a909b560b4b',
     messagingSenderId: '285299670930',
     projectId: 'hydration-tracker-app-2024',
     storageBucket: 'hydration-tracker-app-2024.firebasestorage.app',
-    iosClientId: '285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com',
-    iosBundleId: 'com.example.hydrationTracker',
+    iosClientId: '285299670930-bbf152erdrkp3im8hrl4u49qo02ri5sd.apps.googleusercontent.com',
+    iosBundleId: 'com.lucasperrusi.aquapulse',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v.apps.googleusercontent.com</string>
+	<string>285299670930-bbf152erdrkp3im8hrl4u49qo02ri5sd.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.285299670930-ssog0ld5h6rhe10cuv8i3uj5on266a2v</string>
+	<string>com.googleusercontent.apps.285299670930-bbf152erdrkp3im8hrl4u49qo02ri5sd</string>
 	<key>API_KEY</key>
 	<string>AIzaSyD1RUwW-zLvLJD8NZCcWgJ20y3_kVPOL_s</string>
 	<key>GCM_SENDER_ID</key>
@@ -13,7 +13,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.hydrationTracker</string>
+	<string>com.lucasperrusi.aquapulse</string>
 	<key>PROJECT_ID</key>
 	<string>hydration-tracker-app-2024</string>
 	<key>STORAGE_BUCKET</key>
@@ -29,6 +29,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:285299670930:ios:9fdbb91a1c2e1f9a560b4b</string>
+	<string>1:285299670930:ios:78b2f6a38c1a909b560b4b</string>
 </dict>
 </plist>
