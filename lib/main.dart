@@ -54,15 +54,6 @@ void main() async {
       // Continue even if notification service fails
     }
 
-    // Initialize ad service (with error handling)
-    try {
-      final adService = AdService.instance;
-      await adService.initialize().timeout(const Duration(seconds: 5));
-      if (kDebugMode) debugPrint('Ad service initialized successfully');
-    } catch (e) {
-      if (kDebugMode) debugPrint('Ad service initialization failed: $e');
-      // Continue even if ad service fails
-    }
   } catch (e, stackTrace) {
     if (kDebugMode) {
       debugPrint('Error during initialization: $e');
@@ -243,6 +234,10 @@ class _AppRouterState extends ConsumerState<AppRouter> {
   }
 
   Future<void> _waitForProviders() async {
+    // Start AdMob init in the background — runs during the splash delay.
+    // AdService handles its own errors; not awaited so it never blocks routing.
+    unawaited(AdService.instance.initialize());
+
     try {
       await Future.wait([
         Future.delayed(const Duration(seconds: 3)),
