@@ -234,7 +234,7 @@ class AppRouter extends ConsumerStatefulWidget {
 }
 
 class _AppRouterState extends ConsumerState<AppRouter> {
-  bool _isInitialized = false;
+  final Completer<Widget> _nextScreenCompleter = Completer<Widget>();
 
   @override
   void initState() {
@@ -245,65 +245,24 @@ class _AppRouterState extends ConsumerState<AppRouter> {
   Future<void> _waitForProviders() async {
     try {
       await Future.wait([
+        Future.delayed(const Duration(seconds: 3)),
         ref.read(introductionSeenProvider.notifier).initialLoadDone,
         ref.read(currentUserProvider.notifier).initialLoadDone,
       ]);
+      final introductionSeen = ref.read(introductionSeenProvider);
+      final currentUser = ref.read(currentUserProvider);
+      _nextScreenCompleter.complete(
+        _determineNextScreen(ref, introductionSeen, currentUser),
+      );
     } catch (e) {
-      if (kDebugMode) {
-        debugPrint('Error waiting for startup providers: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-        });
-      }
+      if (kDebugMode) debugPrint('Error waiting for startup providers: $e');
+      _nextScreenCompleter.complete(const OnboardingScreen());
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Watch providers with error handling
-    try {
-      final introductionSeen = ref.watch(introductionSeenProvider);
-      final currentUser = ref.watch(currentUserProvider);
-      if (kDebugMode) {
-        debugPrint(
-            'AppRouter: _isInitialized=$_isInitialized, introductionSeen=$introductionSeen, hasCurrentUser=${currentUser != null}');
-      }
-
-      // Show splash screen while determining next screen
-      return SplashScreen(
-        nextScreen: _isInitialized
-            ? _determineNextScreen(ref, introductionSeen, currentUser)
-            : const Scaffold(
-                backgroundColor: Color(0xFFFAFCFF),
-                body: Center(
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF2196F3),
-                  ),
-                ),
-              ),
-      );
-    } catch (e, stackTrace) {
-      if (kDebugMode) {
-        debugPrint('Error in AppRouter build: $e');
-        debugPrint('Stack trace: $stackTrace');
-      }
-      return Scaffold(
-        backgroundColor: const Color(0xFFFAFCFF),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 16),
-              Text('Error: $e', style: const TextStyle(color: Colors.red)),
-            ],
-          ),
-        ),
-      );
-    }
+    return SplashScreen(nextScreenFuture: _nextScreenCompleter.future);
   }
 
   // Helper method to determine which screen to show next

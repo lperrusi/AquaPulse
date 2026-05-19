@@ -8,9 +8,9 @@ import '../utils/neumorphic_style.dart';
 /// Modern splash screen matching Figma design exactly.
 /// Features animated logo, gradient background, and smooth transitions.
 class SplashScreen extends StatefulWidget {
-  final Widget nextScreen;
+  final Future<Widget> nextScreenFuture;
 
-  const SplashScreen({super.key, required this.nextScreen});
+  const SplashScreen({super.key, required this.nextScreenFuture});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -80,26 +80,24 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       }
     });
     
-    // Navigate to next screen after delay
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        _navigateToNextScreen();
-      }
+    // Navigate when the next screen is ready (minimum 3s enforced by caller)
+    widget.nextScreenFuture.then((screen) {
+      if (mounted) _navigateToNextScreen(screen);
     });
   }
 
-  void _navigateToNextScreen() {
+  void _navigateToNextScreen(Widget screen) {
     if (!mounted) return;
-    
+
     try {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
-          pageBuilder: (context, animation, secondaryAnimation) => widget.nextScreen,
+          pageBuilder: (context, animation, secondaryAnimation) => screen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             const begin = Offset(0.0, 0.0);
             const end = Offset.zero;
             const curve = Curves.easeInOut;
-            
+
             var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
             return SlideTransition(
               position: animation.drive(tween),
@@ -114,10 +112,9 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
       );
     } catch (e) {
       debugPrint('Error navigating from splash screen: $e');
-      // Fallback: just replace with next screen
       if (mounted) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (context) => widget.nextScreen),
+          MaterialPageRoute(builder: (context) => screen),
         );
       }
     }
